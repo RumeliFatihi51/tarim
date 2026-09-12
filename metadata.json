@@ -1,0 +1,6 @@
+{
+  "name": "TerraSat AI",
+  "description": "Kurumsal tarımsal sürdürülebilirlik izleme ve MRV (Ölçüm, Raporlama, Doğrulama) platformu. Menemen / İzmir tarım parsellerinde uydu göstergeleri ve yapay zekâ destekli analiz.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
