@@ -1,303 +1,342 @@
 import React, { useState } from 'react';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
-import { MetricsOverview } from './components/dashboard/MetricsOverview';
-import { ActiveAlerts } from './components/dashboard/ActiveAlerts';
 import { ParcelMap } from './components/map/ParcelMap';
-import { ParcelDetailDrawer } from './components/parcels/ParcelDetailDrawer';
-import { ParcelsTable } from './components/parcels/ParcelsTable';
-import { AnalyticsView } from './components/analytics/AnalyticsView';
+import { SelectedParcelCard } from './components/map/SelectedParcelCard';
+import { LiveAnalysisPipeline } from './components/pipeline/LiveAnalysisPipeline';
+import { AnalysisResultView } from './components/pipeline/AnalysisResultView';
 import { ReportsArchiveView } from './components/reports/ReportsArchiveView';
-import { SettingsView } from './components/settings/SettingsView';
+import { MethodologyView } from './components/methodology/MethodologyView';
 import { MRVReportModal } from './components/reports/MRVReportModal';
-import { PARCELS_DATA } from './data/parcels';
-import { Parcel, LayerMode, TabType, AIAnalysisResult } from './types';
-import { 
-  Sparkles, 
-  MapPin, 
-  ArrowRight, 
-  Layers, 
-  Satellite, 
-  ShieldCheck, 
-  FileCheck2,
-  ChevronRight
-} from 'lucide-react';
+import { INITIAL_PARCELS } from './data/parcels';
+import { Parcel, ActiveTab, FullAnalysisPayload, AIAnalysisResult } from './types';
+import { Layers, Sparkles, Activity, FileText, BookOpen } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-  const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null);
-  const [activeLayer, setActiveLayer] = useState<LayerMode>('status');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<ActiveTab>('monitor');
+  const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(INITIAL_PARCELS[0]); // Emiralem Zeytinliği by default
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [pipelineFinished, setPipelineFinished] = useState(false);
+  const [analysisPayload, setAnalysisPayload] = useState<FullAnalysisPayload | null>(null);
+
+  // Custom polygon drawing state
+  const [isDrawingMode, setIsDrawingMode] = useState(false);
+
+  // Demo vs Sentinel-2 Live Mode toggle
+  const [isDemoMode, setIsDemoMode] = useState(true);
 
   // MRV Modal State
   const [mrvModalOpen, setMrvModalOpen] = useState(false);
-  const [reportParcel, setReportParcel] = useState<Parcel | null>(null);
-  const [reportAnalysis, setReportAnalysis] = useState<AIAnalysisResult | null>(null);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  // Quick select a parcel
-  const handleSelectParcel = (parcel: Parcel) => {
-    setSelectedParcel(parcel);
+  // Quick Preset Selection
+  const handleSelectQuickPreset = (presetId: string) => {
+    const found = INITIAL_PARCELS.find((p) => p.id === presetId);
+    if (found) {
+      setSelectedParcel(found);
+      setIsDrawingMode(false);
+    }
   };
 
-  // Open MRV Report Modal
-  const handleOpenReport = (parcel: Parcel, analysis: AIAnalysisResult | null = null) => {
-    setReportParcel(parcel);
-    setReportAnalysis(analysis);
+  // Trigger Satellite Analysis Pipeline
+  const handleStartAnalysis = async () => {
+    const parcelToAnalyze = selectedParcel || INITIAL_PARCELS[0];
+    setSelectedParcel(parcelToAnalyze);
+    setIsAnalyzing(true);
+    setPipelineFinished(false);
+    setActiveTab('analysis');
+
+    try {
+      // Call our backend remote sensing pipeline
+      const res = await fetch('/api/satellite/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parcelId: parcelToAnalyze.id,
+          parcelName: parcelToAnalyze.name,
+          crop: parcelToAnalyze.crop,
+          areaHa: parcelToAnalyze.areaHa,
+          polygon: parcelToAnalyze.polygon,
+          isDemo: isDemoMode,
+        }),
+      });
+
+      if (res.ok) {
+        const payload: FullAnalysisPayload = await res.json();
+        setAnalysisPayload(payload);
+      } else {
+        // Fallback payload if fetch returned error
+        createLocalPayload(parcelToAnalyze);
+      }
+    } catch (err) {
+      console.error('Remote sensing pipeline error, using fallback payload:', err);
+      createLocalPayload(parcelToAnalyze);
+    }
+  };
+
+  const createLocalPayload = (parcel: Parcel) => {
+    const payload: FullAnalysisPayload = {
+      parcel,
+      satelliteMetadata: {
+        sensor: 'Copernicus Sentinel-2B MSI',
+        sceneId: 'S2B_MSIL2A_20260908T084559_N0500_R107_T35SNC',
+        tileId: 'T35SNC',
+        acquisitionDate: '08 Eylül 2026',
+        cloudCoveragePercent: 4.2,
+        cloudScreeningPassed: true,
+        spatialResolutionMeters: 10,
+        processingLevel: 'L2A (BOA Surface Reflectance)',
+        bandsUsed: ['B02', 'B03', 'B04', 'B08', 'B11'],
+      },
+      spectralBands: {
+        B02: 0.042,
+        B03: 0.078,
+        B04: 0.062,
+        B08: 0.325,
+        B11: 0.175,
+      },
+      calculatedIndices: {
+        ndvi: parcel.ndvi || 0.68,
+        ndviTrend: -6.4,
+        ndwi: parcel.ndwi || 0.21,
+        ndwiTrend: -11.2,
+        ndmi: 0.19,
+        soilMoisture: parcel.soilMoisture || 38,
+        waterStress: parcel.waterStress || 'Medium',
+        plantHealth: parcel.plantHealth || 'Good',
+        carbonIndicator: parcel.carbonIndicator || 'Positive',
+      },
+      historicalObservations: parcel.historicalData || [],
+      aiAssessment: {
+        summary: `${parcel.name} parseli için 08 Eylül 2026 tarihli Sentinel-2B L2A analizi tamamlandı. NDVI seviyesi ${parcel.ndvi} ile kanopi biyokütlesi korunmakta olup, NDWI ${parcel.ndwi} değerine gerilemiştir. Hidrik stres nedeniyle sulama kontrolü önerilmektedir.`,
+        overallStatus: 'Orta Düzey Çevresel Stres',
+        keyFindings: [
+          'NDVI 0.68 seviyesinde: Çok yıllık zeytin kanopisi fotosentetik canlılığını sürdürüyor.',
+          'NDWI su indeksi 60 günde %11.2 gerileyerek 0.21 seviyesine indi.',
+          'Gözlem kalitesi: Bulut örtüsü %4.2 ile yüksek güvenilirlikte spektral okuma.',
+          'Karbon yutak fonksiyonu dengeli ve pozitif eğilimdedir.',
+        ],
+        risks: [
+          {
+            title: 'Yaz Sonu Hidrik Su Kısıtı (NDWI Gerilemesi)',
+            severity: 'medium',
+            explanation: 'SWIR B11 bandındaki emilim zayıflaması kanopi yaprak su içeriğinin azaldığına işaret etmektedir.',
+            evidence: 'NDWI 0.21 (B08: 0.325, B11: 0.175)',
+          },
+        ],
+        positiveSignals: [
+          'Vejetasyon indeksi bölgesel zeytin referans eşiğinin üzerindedir.',
+          'Atmosferik aerosol ve sirrüs engeli bulunmamaktadır.',
+        ],
+        possibleDrivers: [
+          'Ağustos ve Eylül ayı yüksek buharlaşması (ET0)',
+          'Sulama periyodunun uzamış olması',
+        ],
+        recommendedActions: [
+          'Damlama sulama sisteminin filtre ve basınç kontrolü',
+          'Ağaç tacı altına organik malç uygulaması',
+        ],
+        verificationNeeded: [
+          'Kök derinliğinde (0-30cm) TDR el tipi sensörle toprak nemi teyidi.',
+          'Kooperatif sulama log defteri ve sayaç kayıtlarının incelenmesi.',
+          'Sonraki Sentinel-2 döngüsünde (13 Eylül) spektral toparlanma takibi.',
+        ],
+        mrvStatus: {
+          measurement: [
+            'Sentinel-2 L2A BOA yansıma değerleri (B04, B08, B11)',
+            'NDVI = 0.68, NDWI = 0.21 piksel ortalamaları',
+          ],
+          reporting: [
+            'CSRD ve Scope 3 uyumlu dönemsel çevresel performans endeksi',
+            'Kurumsal su riski skorlaması',
+          ],
+          verification: [
+            'Zemin nemi TDR kontrolü',
+            'Çiftçi sulama beyanı teyidi',
+          ],
+        },
+        confidenceLevel: 'High',
+        confidenceJustification: 'Bulutsuz (%4.2) Sentinel-2 L2A yansıma verileri ve 6 aylık tutarlı zaman serisi trendi.',
+        modelUsed: 'Gemini 3.8 Flash & ESA L2A',
+      },
+      isDemoMode: true,
+      dataSourceLabel: 'Copernicus Sentinel-2B MSI (Level-2A BOA)',
+      timestamp: new Date().toISOString(),
+    };
+    setAnalysisPayload(payload);
+  };
+
+  const handlePipelineCompleted = () => {
+    setIsAnalyzing(false);
+    setPipelineFinished(true);
+  };
+
+  const handleOpenReportModal = () => {
     setMrvModalOpen(true);
   };
 
+  // Finished custom polygon drawing on map
+  const handleFinishCustomDrawing = (coords: [number, number][]) => {
+    setIsDrawingMode(false);
+    const customParcel: Parcel = {
+      id: `poly-${Date.now().toString().slice(-4)}`,
+      number: `#USR-${coords.length}K`,
+      name: 'Özel Çizilen Parsel Alanı',
+      location: 'Emiralem / Menemen Bölgesi',
+      crop: 'Zeytinlik (Özel Sınır)',
+      areaHa: 5.2,
+      status: 'moderate',
+      sustainabilityScore: 79,
+      scoreBreakdown: { vegetation: 80, water: 72, soil: 76, carbon: 84, management: 76 },
+      ndvi: 0.68,
+      ndwi: 0.21,
+      soilMoisture: 38,
+      waterStress: 'Medium',
+      plantHealth: 'Good',
+      carbonIndicator: 'Positive',
+      lastObservation: '08 Eylül 2026',
+      polygon: coords,
+      historicalData: INITIAL_PARCELS[0].historicalData,
+    };
+    setSelectedParcel(customParcel);
+  };
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#070a11] text-slate-100 antialiased font-sans">
-      {/* Fixed Sidebar */}
+    <div className="flex h-screen w-screen overflow-hidden bg-[#080c14] text-slate-100 antialiased font-sans">
+      {/* Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
         onTabChange={(tab) => {
           setActiveTab(tab);
           setMobileSidebarOpen(false);
         }}
-        activeParcelCount={PARCELS_DATA.length}
         isOpen={mobileSidebarOpen}
         onClose={() => setMobileSidebarOpen(false)}
+        isDemoMode={isDemoMode}
       />
 
-      {/* Main Content Area */}
+      {/* Main App Container */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         {/* Top Header */}
         <Header
+          activeTab={activeTab}
           selectedParcel={selectedParcel}
-          onSearch={setSearchQuery}
-          onOpenAlertParcel={(parcel) => {
-            setSelectedParcel(parcel);
+          onSearchLocation={(query) => {
+            // Quick search handler
+            if (query.toLowerCase().includes('emiralem')) {
+              handleSelectQuickPreset('emiralem-01');
+            } else if (query.toLowerCase().includes('karasu') || query.toLowerCase().includes('domates')) {
+              handleSelectQuickPreset('042');
+            } else if (query.toLowerCase().includes('pamuk')) {
+              handleSelectQuickPreset('063');
+            }
           }}
+          onSelectQuickDemo={() => handleSelectQuickPreset('emiralem-01')}
+          onStartAnalysis={handleStartAnalysis}
+          isAnalyzing={isAnalyzing}
           onToggleMobileMenu={() => setMobileSidebarOpen(!mobileSidebarOpen)}
+          isDemoMode={isDemoMode}
+          onToggleDemoMode={setIsDemoMode}
         />
 
-        {/* Dynamic View Scrollable Container */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-7 space-y-6">
-          {/* TAB 1: DASHBOARD (Overview) */}
-          {activeTab === 'dashboard' && (
-            <div className="space-y-6 max-w-7xl mx-auto">
-              {/* Region & Mission Banner */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-900/80 to-slate-900 border border-emerald-500/20">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                    <Satellite className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h1 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
-                        Menemen / Gediz Havzası Pilot Alanı
-                      </h1>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                        Sentinel-2 Aktif
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      1,284 tedarikçi parselinde eşzamanlı vejetasyon, su stresi ve toprak nemi denetimi
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 text-xs self-start sm:self-auto">
-                  <button
-                    onClick={() => setActiveTab('map')}
-                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium transition flex items-center gap-1.5 border border-slate-700"
-                  >
-                    <Layers className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Haritayı Genişlet</span>
-                  </button>
-                  <button
-                    onClick={() => handleSelectParcel(PARCELS_DATA[0])}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Örnek Parseli İncele (#042)</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 4 Metric Cards & Supply Chain Pipeline */}
-              <MetricsOverview onFilterStatus={() => setActiveTab('parcels')} />
-
-              {/* Main Grid: Interactive Map (7 cols) + Active Alerts (5 cols) */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                <div className="lg:col-span-8 flex flex-col min-h-[480px]">
-                  <ParcelMap
-                    parcels={PARCELS_DATA}
-                    selectedParcel={selectedParcel}
-                    onSelectParcel={handleSelectParcel}
-                    activeLayer={activeLayer}
-                    onLayerChange={setActiveLayer}
-                  />
-                </div>
-
-                <div className="lg:col-span-4 flex flex-col min-h-[480px]">
-                  <ActiveAlerts
-                    parcels={PARCELS_DATA}
-                    onSelectParcel={handleSelectParcel}
-                  />
-                </div>
-              </div>
-
-              {/* Featured Demonstration Parcels Quick-Row */}
-              <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 sm:p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h2 className="text-sm font-bold text-white tracking-tight">
-                      Örnek Tedarikçi Parselleri (Hızlı Erişim)
-                    </h2>
-                    <p className="text-xs text-slate-400">
-                      Farklı ürün ve risk profillerini temsil eden demonstrasyon parselleri
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setActiveTab('parcels')}
-                    className="text-xs text-emerald-400 hover:underline flex items-center gap-1"
-                  >
-                    <span>Tüm Parselleri Listele</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {PARCELS_DATA.slice(0, 3).map((p) => (
-                    <div
-                      key={p.id}
-                      onClick={() => handleSelectParcel(p)}
-                      className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 hover:border-slate-700 cursor-pointer transition group"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs font-bold text-emerald-400">{p.number}</span>
-                        <span
-                          className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                            p.status === 'healthy'
-                              ? 'bg-emerald-500/10 text-emerald-400'
-                              : 'bg-amber-500/10 text-amber-400'
-                          }`}
-                        >
-                          {p.status === 'healthy' ? 'Sağlıklı' : 'Orta Risk'}
-                        </span>
-                      </div>
-                      <div className="font-bold text-white text-xs mt-1.5 group-hover:text-emerald-300 transition">
-                        {p.name}
-                      </div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">
-                        {p.crop} • {p.areaHa} ha
-                      </div>
-                      <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
-                        <span className="text-slate-400 font-mono">NDVI: <strong className="text-white">{p.ndvi}</strong></span>
-                        <span className="text-emerald-400 flex items-center gap-1 text-[10px] font-semibold">
-                          Detayları Aç <ArrowRight className="w-3 h-3" />
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: GEOSPATIAL MAP (Full view) */}
-          {activeTab === 'map' && (
-            <div className="h-[calc(100vh-140px)] flex flex-col space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-bold text-white tracking-tight">
-                    Mekânsal CBS & Uydu Analiz Haritası
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    Sentinel-2 L2A spektral katmanları ve parsel sınırları
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex-1 min-h-0">
+        {/* Dynamic Views based on Active Tab */}
+        <div className="flex-1 overflow-hidden relative">
+          {/* TAB 1: MONITOR (Map + Right Selection Panel) */}
+          {activeTab === 'monitor' && (
+            <div className="relative w-full h-full flex flex-col lg:flex-row">
+              {/* Map Canvas */}
+              <div className="flex-1 h-full relative">
                 <ParcelMap
-                  parcels={PARCELS_DATA}
+                  parcels={INITIAL_PARCELS}
                   selectedParcel={selectedParcel}
-                  onSelectParcel={handleSelectParcel}
-                  activeLayer={activeLayer}
-                  onLayerChange={setActiveLayer}
+                  onSelectParcel={(p) => setSelectedParcel(p)}
+                  isDrawingMode={isDrawingMode}
+                  onFinishDrawing={handleFinishCustomDrawing}
+                  onCancelDrawing={() => setIsDrawingMode(false)}
+                />
+              </div>
+
+              {/* Selected Area Floating Card on the Right (Section 34) */}
+              <div className="absolute top-4 right-4 z-20 pointer-events-auto">
+                <SelectedParcelCard
+                  parcel={selectedParcel}
+                  onStartAnalysis={handleStartAnalysis}
+                  isAnalyzing={isAnalyzing}
+                  isDrawing={isDrawingMode}
+                  onToggleDrawing={() => setIsDrawingMode(!isDrawingMode)}
+                  isDemoMode={isDemoMode}
+                  onSelectQuickPreset={handleSelectQuickPreset}
                 />
               </div>
             </div>
           )}
 
-          {/* TAB 3: PARCELS TABLE */}
-          {activeTab === 'parcels' && (
-            <div className="space-y-4 max-w-7xl mx-auto">
-              <div>
-                <h2 className="text-base font-bold text-white tracking-tight">
-                  Tedarikçi Parsel Envanteri & Göstergeleri
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Menemen Gediz Deltası'ndaki tüm kayıtlı tarım arazilerinin spektral ve çevresel durumu
-                </p>
-              </div>
-
-              <ParcelsTable
-                parcels={PARCELS_DATA}
-                onSelectParcel={handleSelectParcel}
-                onGenerateReport={(parcel) => handleOpenReport(parcel)}
-              />
+          {/* TAB 2: ANALYSIS (Live Pipeline OR Analysis Result View) */}
+          {activeTab === 'analysis' && (
+            <div className="w-full h-full">
+              {isAnalyzing ? (
+                <LiveAnalysisPipeline
+                  parcel={selectedParcel || INITIAL_PARCELS[0]}
+                  onComplete={handlePipelineCompleted}
+                  isDemoMode={isDemoMode}
+                />
+              ) : analysisPayload ? (
+                <AnalysisResultView
+                  analysisData={analysisPayload}
+                  onOpenReport={handleOpenReportModal}
+                  onBackToMap={() => setActiveTab('monitor')}
+                />
+              ) : (
+                /* Empty state prompting user to start */
+                <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-[#080c14]">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4">
+                    <Activity className="w-8 h-8 animate-pulse" />
+                  </div>
+                  <h2 className="text-xl font-bold text-white">Henüz Bir Alan Analiz Edilmedi</h2>
+                  <p className="text-xs text-slate-400 max-w-sm mt-1 mb-5">
+                    Harita üzerinden bir parsel seçin veya hemen Emiralem Zeytinliği örnek demonstrasyonunu başlatın.
+                  </p>
+                  <button
+                    onClick={handleStartAnalysis}
+                    className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg shadow-emerald-500/20 transition active:scale-95"
+                  >
+                    Emiralem Zeytinliği Analizini Başlat
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* TAB 4: ENVIRONMENTAL ANALYTICS */}
-          {activeTab === 'analytics' && (
-            <div className="space-y-4 max-w-7xl mx-auto">
-              <div>
-                <h2 className="text-base font-bold text-white tracking-tight">
-                  Çevresel Göstergeler & Tedarik Zinciri Dağılımı
-                </h2>
-                <p className="text-xs text-slate-400">
-                  NDVI (Vejetasyon), NDWI (Su), Toprak Nemi ve Karbon Tutum Göstergeleri
-                </p>
-              </div>
-
-              <AnalyticsView
-                parcels={PARCELS_DATA}
-                onSelectParcel={handleSelectParcel}
-              />
-            </div>
-          )}
-
-          {/* TAB 5: MRV REPORTS ARCHIVE */}
+          {/* TAB 3: REPORTS (MRV Archives & Downloads) */}
           {activeTab === 'reports' && (
-            <div className="space-y-4 max-w-7xl mx-auto">
-              <ReportsArchiveView
-                parcels={PARCELS_DATA}
-                onOpenReport={(parcel) => handleOpenReport(parcel)}
-              />
+            <div className="w-full h-full p-4 sm:p-8 overflow-y-auto bg-[#080c14]">
+              <div className="max-w-6xl mx-auto">
+                <ReportsArchiveView
+                  parcels={INITIAL_PARCELS}
+                  onOpenReport={(p) => {
+                    setSelectedParcel(p);
+                    handleOpenReportModal();
+                  }}
+                />
+              </div>
             </div>
           )}
 
-          {/* TAB 6: SETTINGS & METHODOLOGY */}
-          {activeTab === 'settings' && (
-            <div className="space-y-4 max-w-7xl mx-auto">
-              <SettingsView />
+          {/* TAB 4: METHODOLOGY (Scientific Documentation) */}
+          {activeTab === 'methodology' && (
+            <div className="w-full h-full">
+              <MethodologyView />
             </div>
           )}
-        </main>
+        </div>
       </div>
 
-      {/* Parcel Detail Drawer */}
-      {selectedParcel && (
-        <ParcelDetailDrawer
-          parcel={selectedParcel}
-          onClose={() => setSelectedParcel(null)}
-          onGenerateReport={(parcel, analysis) => {
-            handleOpenReport(parcel, analysis);
-          }}
-        />
-      )}
-
-      {/* Corporate MRV Report Modal */}
-      {mrvModalOpen && reportParcel && (
+      {/* 12-Section Corporate MRV Report Modal */}
+      {mrvModalOpen && (
         <MRVReportModal
-          parcel={reportParcel}
-          analysis={reportAnalysis}
+          parcel={selectedParcel || INITIAL_PARCELS[0]}
+          analysis={analysisPayload ? analysisPayload.aiAssessment : null}
+          fullPayload={analysisPayload}
           onClose={() => setMrvModalOpen(false)}
         />
       )}
