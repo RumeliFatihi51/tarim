@@ -9,8 +9,9 @@ import { ReportsArchiveView } from './components/reports/ReportsArchiveView';
 import { MethodologyView } from './components/methodology/MethodologyView';
 import { MRVReportModal } from './components/reports/MRVReportModal';
 import { INITIAL_PARCELS } from './data/parcels';
-import { Parcel, ActiveTab, FullAnalysisPayload, AIAnalysisResult } from './types';
-import { Layers, Sparkles, Activity, FileText, BookOpen } from 'lucide-react';
+import { Parcel, ActiveTab, FullAnalysisPayload } from './types';
+import { Activity } from 'lucide-react';
+import { getDemoAnalysisPayload } from './demo/sampleData';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('monitor');
@@ -22,8 +23,8 @@ export default function App() {
   // Custom polygon drawing state
   const [isDrawingMode, setIsDrawingMode] = useState(false);
 
-  // Demo vs Sentinel-2 Live Mode toggle
-  const [isDemoMode, setIsDemoMode] = useState(true);
+  // Default to LIVE Sentinel-2 mode, user can toggle to DEMO if needed
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   // MRV Modal State
   const [mrvModalOpen, setMrvModalOpen] = useState(false);
@@ -39,134 +40,20 @@ export default function App() {
   };
 
   // Trigger Satellite Analysis Pipeline
-  const handleStartAnalysis = async () => {
+  const handleStartAnalysis = () => {
     const parcelToAnalyze = selectedParcel || INITIAL_PARCELS[0];
     setSelectedParcel(parcelToAnalyze);
     setIsAnalyzing(true);
     setPipelineFinished(false);
     setActiveTab('analysis');
+  };
 
-    try {
-      // Call our backend remote sensing pipeline
-      const res = await fetch('/api/satellite/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          parcelId: parcelToAnalyze.id,
-          parcelName: parcelToAnalyze.name,
-          crop: parcelToAnalyze.crop,
-          areaHa: parcelToAnalyze.areaHa,
-          polygon: parcelToAnalyze.polygon,
-          isDemo: isDemoMode,
-        }),
-      });
-
-      if (res.ok) {
-        const payload: FullAnalysisPayload = await res.json();
-        setAnalysisPayload(payload);
-      } else {
-        // Fallback payload if fetch returned error
-        createLocalPayload(parcelToAnalyze);
-      }
-    } catch (err) {
-      console.error('Remote sensing pipeline error, using fallback payload:', err);
-      createLocalPayload(parcelToAnalyze);
+  const handlePipelineCompleted = (payload?: FullAnalysisPayload) => {
+    if (payload) {
+      setAnalysisPayload(payload);
+    } else if (isDemoMode) {
+      setAnalysisPayload(getDemoAnalysisPayload(selectedParcel?.id));
     }
-  };
-
-  const createLocalPayload = (parcel: Parcel) => {
-    const payload: FullAnalysisPayload = {
-      parcel,
-      satelliteMetadata: {
-        sensor: 'Copernicus Sentinel-2B MSI',
-        sceneId: 'S2B_MSIL2A_20260908T084559_N0500_R107_T35SNC',
-        tileId: 'T35SNC',
-        acquisitionDate: '08 Eylül 2026',
-        cloudCoveragePercent: 4.2,
-        cloudScreeningPassed: true,
-        spatialResolutionMeters: 10,
-        processingLevel: 'L2A (BOA Surface Reflectance)',
-        bandsUsed: ['B02', 'B03', 'B04', 'B08', 'B11'],
-      },
-      spectralBands: {
-        B02: 0.042,
-        B03: 0.078,
-        B04: 0.062,
-        B08: 0.325,
-        B11: 0.175,
-      },
-      calculatedIndices: {
-        ndvi: parcel.ndvi || 0.68,
-        ndviTrend: -6.4,
-        ndwi: parcel.ndwi || 0.21,
-        ndwiTrend: -11.2,
-        ndmi: 0.19,
-        soilMoisture: parcel.soilMoisture || 38,
-        waterStress: parcel.waterStress || 'Medium',
-        plantHealth: parcel.plantHealth || 'Good',
-        carbonIndicator: parcel.carbonIndicator || 'Positive',
-      },
-      historicalObservations: parcel.historicalData || [],
-      aiAssessment: {
-        summary: `${parcel.name} parseli için 08 Eylül 2026 tarihli Sentinel-2B L2A analizi tamamlandı. NDVI seviyesi ${parcel.ndvi} ile kanopi biyokütlesi korunmakta olup, NDWI ${parcel.ndwi} değerine gerilemiştir. Hidrik stres nedeniyle sulama kontrolü önerilmektedir.`,
-        overallStatus: 'Orta Düzey Çevresel Stres',
-        keyFindings: [
-          'NDVI 0.68 seviyesinde: Çok yıllık zeytin kanopisi fotosentetik canlılığını sürdürüyor.',
-          'NDWI su indeksi 60 günde %11.2 gerileyerek 0.21 seviyesine indi.',
-          'Gözlem kalitesi: Bulut örtüsü %4.2 ile yüksek güvenilirlikte spektral okuma.',
-          'Karbon yutak fonksiyonu dengeli ve pozitif eğilimdedir.',
-        ],
-        risks: [
-          {
-            title: 'Yaz Sonu Hidrik Su Kısıtı (NDWI Gerilemesi)',
-            severity: 'medium',
-            explanation: 'SWIR B11 bandındaki emilim zayıflaması kanopi yaprak su içeriğinin azaldığına işaret etmektedir.',
-            evidence: 'NDWI 0.21 (B08: 0.325, B11: 0.175)',
-          },
-        ],
-        positiveSignals: [
-          'Vejetasyon indeksi bölgesel zeytin referans eşiğinin üzerindedir.',
-          'Atmosferik aerosol ve sirrüs engeli bulunmamaktadır.',
-        ],
-        possibleDrivers: [
-          'Ağustos ve Eylül ayı yüksek buharlaşması (ET0)',
-          'Sulama periyodunun uzamış olması',
-        ],
-        recommendedActions: [
-          'Damlama sulama sisteminin filtre ve basınç kontrolü',
-          'Ağaç tacı altına organik malç uygulaması',
-        ],
-        verificationNeeded: [
-          'Kök derinliğinde (0-30cm) TDR el tipi sensörle toprak nemi teyidi.',
-          'Kooperatif sulama log defteri ve sayaç kayıtlarının incelenmesi.',
-          'Sonraki Sentinel-2 döngüsünde (13 Eylül) spektral toparlanma takibi.',
-        ],
-        mrvStatus: {
-          measurement: [
-            'Sentinel-2 L2A BOA yansıma değerleri (B04, B08, B11)',
-            'NDVI = 0.68, NDWI = 0.21 piksel ortalamaları',
-          ],
-          reporting: [
-            'CSRD ve Scope 3 uyumlu dönemsel çevresel performans endeksi',
-            'Kurumsal su riski skorlaması',
-          ],
-          verification: [
-            'Zemin nemi TDR kontrolü',
-            'Çiftçi sulama beyanı teyidi',
-          ],
-        },
-        confidenceLevel: 'High',
-        confidenceJustification: 'Bulutsuz (%4.2) Sentinel-2 L2A yansıma verileri ve 6 aylık tutarlı zaman serisi trendi.',
-        modelUsed: 'Gemini 3.8 Flash & ESA L2A',
-      },
-      isDemoMode: true,
-      dataSourceLabel: 'Copernicus Sentinel-2B MSI (Level-2A BOA)',
-      timestamp: new Date().toISOString(),
-    };
-    setAnalysisPayload(payload);
-  };
-
-  const handlePipelineCompleted = () => {
     setIsAnalyzing(false);
     setPipelineFinished(true);
   };
@@ -178,19 +65,37 @@ export default function App() {
   // Finished custom polygon drawing on map
   const handleFinishCustomDrawing = (coords: [number, number][]) => {
     setIsDrawingMode(false);
+
+    // Compute approximate area in ha from coords
+    let areaHa = 4.0;
+    if (coords.length >= 3) {
+      // Shoelace approximation for small coordinates
+      let area = 0;
+      const n = coords.length;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const xi = coords[i][1] * 111320 * Math.cos((coords[i][0] * Math.PI) / 180);
+        const yi = coords[i][0] * 110540;
+        const xj = coords[j][1] * 111320 * Math.cos((coords[j][0] * Math.PI) / 180);
+        const yj = coords[j][0] * 110540;
+        area += xi * yj - xj * yi;
+      }
+      areaHa = Math.max(0.2, parseFloat((Math.abs(area) / 2 / 10000).toFixed(2)));
+    }
+
     const customParcel: Parcel = {
       id: `poly-${Date.now().toString().slice(-4)}`,
       number: `#USR-${coords.length}K`,
       name: 'Özel Çizilen Parsel Alanı',
       location: 'Emiralem / Menemen Bölgesi',
       crop: 'Zeytinlik (Özel Sınır)',
-      areaHa: 5.2,
+      areaHa,
       status: 'moderate',
-      sustainabilityScore: 79,
-      scoreBreakdown: { vegetation: 80, water: 72, soil: 76, carbon: 84, management: 76 },
-      ndvi: 0.68,
-      ndwi: 0.21,
-      soilMoisture: 38,
+      sustainabilityScore: 78,
+      scoreBreakdown: { vegetation: 78, water: 70, soil: 75, carbon: 80, management: 75 },
+      ndvi: 0.65,
+      ndwi: 0.20,
+      soilMoisture: 36,
       waterStress: 'Medium',
       plantHealth: 'Good',
       carbonIndicator: 'Positive',
@@ -222,7 +127,6 @@ export default function App() {
           activeTab={activeTab}
           selectedParcel={selectedParcel}
           onSearchLocation={(query) => {
-            // Quick search handler
             if (query.toLowerCase().includes('emiralem')) {
               handleSelectQuickPreset('emiralem-01');
             } else if (query.toLowerCase().includes('karasu') || query.toLowerCase().includes('domates')) {
@@ -253,10 +157,11 @@ export default function App() {
                   isDrawingMode={isDrawingMode}
                   onFinishDrawing={handleFinishCustomDrawing}
                   onCancelDrawing={() => setIsDrawingMode(false)}
+                  analysisPayload={analysisPayload}
                 />
               </div>
 
-              {/* Selected Area Floating Card on the Right (Section 34) */}
+              {/* Selected Area Floating Card on the Right */}
               <div className="absolute top-4 right-4 z-20 pointer-events-auto">
                 <SelectedParcelCard
                   parcel={selectedParcel}
@@ -294,7 +199,7 @@ export default function App() {
                   </div>
                   <h2 className="text-xl font-bold text-white">Henüz Bir Alan Analiz Edilmedi</h2>
                   <p className="text-xs text-slate-400 max-w-sm mt-1 mb-5">
-                    Harita üzerinden bir parsel seçin veya hemen Emiralem Zeytinliği örnek demonstrasyonunu başlatın.
+                    Harita üzerinden bir parsel seçin veya hemen Emiralem Zeytinliği canlı Sentinel-2 analizini başlatın.
                   </p>
                   <button
                     onClick={handleStartAnalysis}
@@ -331,7 +236,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* 12-Section Corporate MRV Report Modal */}
+      {/* 19-Section Corporate MRV Report Modal */}
       {mrvModalOpen && (
         <MRVReportModal
           parcel={selectedParcel || INITIAL_PARCELS[0]}

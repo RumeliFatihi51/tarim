@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { Parcel, RiskStatus } from '../../types';
+import { Parcel, RiskStatus, FullAnalysisPayload } from '../../types';
 import { 
   Layers, 
   RotateCcw, 
@@ -22,6 +22,7 @@ interface ParcelMapProps {
   isDrawingMode: boolean;
   onFinishDrawing?: (coords: [number, number][]) => void;
   onCancelDrawing?: () => void;
+  analysisPayload?: FullAnalysisPayload | null;
   className?: string;
 }
 
@@ -34,12 +35,14 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
   isDrawingMode,
   onFinishDrawing,
   onCancelDrawing,
+  analysisPayload,
   className = '',
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const polygonLayersRef = useRef<{ [id: string]: L.Polygon }>({});
   const drawingLayerRef = useRef<L.LayerGroup | null>(null);
+  const imageOverlayRef = useRef<L.ImageOverlay | null>(null);
   const [drawnPoints, setDrawnPoints] = useState<[number, number][]>([]);
 
   const [layerMode, setLayerMode] = useState<MapLayerMode>('satellite');
@@ -99,76 +102,35 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
     } else if (basemap === 'dark') {
       tileLayerRef.current = L.tileLayer(
         'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        { maxZoom: 19, attribution: 'CartoDB' }
+        { maxZoom: 19, attribution: 'CARTO' }
       );
     } else {
       tileLayerRef.current = L.tileLayer(
         'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        { maxZoom: 19, attribution: 'OSM' }
+        { maxZoom: 19, attribution: 'OpenStreetMap' }
       );
     }
 
     tileLayerRef.current.addTo(mapInstanceRef.current);
   }, [basemap]);
 
-  // Click handler on map
+  // Click handler for drawing custom parcel
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
     const handleMapClick = (e: L.LeafletMouseEvent) => {
-      const { lat, lng } = e.latlng;
+      if (!isDrawingMode) return;
 
-      if (isDrawingMode) {
-        // Add vertex to custom polygon
-        setDrawnPoints((prev) => [...prev, [lat, lng]]);
-      } else {
-        // If not drawing, clicking empty space creates an area selection box around the click
-        const delta = 0.0035; // ~3.5 ha
-        const customPolygon: [number, number][] = [
-          [lat - delta, lng - delta],
-          [lat + delta, lng - delta * 0.8],
-          [lat + delta * 0.9, lng + delta],
-          [lat - delta * 0.7, lng + delta],
-        ];
-
-        const customParcel: Parcel = {
-          id: `custom-${Date.now().toString().slice(-4)}`,
-          number: `#SEC-${lat.toFixed(2)}`,
-          name: `Seçilen Tarım Alanı (${lat.toFixed(3)}°K, ${lng.toFixed(3)}°D)`,
-          location: 'Menemen / İzmir Bölgesi',
-          crop: 'Zeytinlik / Karışık Dikili Tarım',
-          areaHa: 4.2,
-          status: 'moderate',
-          sustainabilityScore: 78,
-          scoreBreakdown: { vegetation: 80, water: 72, soil: 76, carbon: 82, management: 74 },
-          ndvi: 0.69,
-          ndwi: 0.24,
-          soilMoisture: 40,
-          waterStress: 'Medium',
-          plantHealth: 'Good',
-          carbonIndicator: 'Positive',
-          lastObservation: '08 Eylül 2026',
-          polygon: customPolygon,
-          historicalData: [
-            { date: '15 Nis', ndvi: 0.65, ndwi: 0.38, soilMoisture: 54, sustainabilityScore: 78 },
-            { date: '15 May', ndvi: 0.72, ndwi: 0.34, soilMoisture: 49, sustainabilityScore: 81 },
-            { date: '15 Haz', ndvi: 0.74, ndwi: 0.30, soilMoisture: 45, sustainabilityScore: 82 },
-            { date: '15 Tem', ndvi: 0.71, ndwi: 0.27, soilMoisture: 42, sustainabilityScore: 80 },
-            { date: '15 Ağu', ndvi: 0.69, ndwi: 0.25, soilMoisture: 40, sustainabilityScore: 79 },
-            { date: '08 Eyl', ndvi: 0.69, ndwi: 0.24, soilMoisture: 40, sustainabilityScore: 78 },
-          ],
-        };
-
-        onSelectParcel(customParcel);
-      }
+      const newPoint: [number, number] = [e.latlng.lat, e.latlng.lng];
+      setDrawnPoints((prev) => [...prev, newPoint]);
     };
 
     map.on('click', handleMapClick);
     return () => {
       map.off('click', handleMapClick);
     };
-  }, [isDrawingMode, onSelectParcel]);
+  }, [isDrawingMode]);
 
   // Render drawing preview
   useEffect(() => {
@@ -178,8 +140,7 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
     group.clearLayers();
 
     if (drawnPoints.length > 0) {
-      // Draw markers for vertices
-      drawnPoints.forEach((pt, index) => {
+      drawnPoints.forEach((pt) => {
         const marker = L.circleMarker(pt, {
           radius: 5,
           fillColor: '#10b981',
@@ -191,7 +152,6 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
       });
 
       if (drawnPoints.length > 1) {
-        // Draw polyline
         const polyline = L.polyline(drawnPoints, {
           color: '#34d399',
           weight: 3,
@@ -201,7 +161,6 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
       }
 
       if (drawnPoints.length > 2) {
-        // Draw filled polygon preview
         const polygon = L.polygon(drawnPoints, {
           fillColor: '#10b981',
           fillOpacity: 0.25,
@@ -213,6 +172,45 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
     }
   }, [drawnPoints]);
 
+  // Real raster overlay rendering
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (imageOverlayRef.current) {
+      map.removeLayer(imageOverlayRef.current);
+      imageOverlayRef.current = null;
+    }
+
+    if (!selectedParcel || !analysisPayload?.visualizations) return;
+
+    let overlayUrl: string | undefined;
+    if (layerMode === 'ndvi') overlayUrl = analysisPayload.visualizations.ndviPngBase64;
+    else if (layerMode === 'ndwi') overlayUrl = analysisPayload.visualizations.ndwiPngBase64;
+    else if (layerMode === 'moisture') overlayUrl = analysisPayload.visualizations.ndmiPngBase64;
+    else if (layerMode === 'satellite') overlayUrl = analysisPayload.visualizations.rgbPngBase64;
+
+    if (overlayUrl && selectedParcel.polygon?.length >= 3) {
+      const lats = selectedParcel.polygon.map((p) => p[0]);
+      const lngs = selectedParcel.polygon.map((p) => p[1]);
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+      const minLng = Math.min(...lngs);
+      const maxLng = Math.max(...lngs);
+
+      const bounds: L.LatLngBoundsExpression = [
+        [minLat, minLng],
+        [maxLat, maxLng],
+      ];
+      const overlay = L.imageOverlay(overlayUrl, bounds, {
+        opacity: 0.88,
+        interactive: false,
+      });
+      overlay.addTo(map);
+      imageOverlayRef.current = overlay;
+    }
+  }, [selectedParcel, analysisPayload, layerMode]);
+
   // Style calculator for parcels based on layerMode
   const getParcelStyle = (parcel: Parcel, isSelected: boolean) => {
     let fillColor = '#10b981';
@@ -220,12 +218,10 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
     let fillOpacity = isSelected ? 0.65 : 0.38;
 
     if (layerMode === 'satellite') {
-      // Clean boundary highlight over original satellite imagery
       fillColor = isSelected ? '#10b981' : '#059669';
       borderColor = isSelected ? '#ffffff' : '#34d399';
       fillOpacity = isSelected ? 0.45 : 0.22;
     } else if (layerMode === 'ndvi') {
-      // False color vegetation vigor: yellow -> lime -> deep emerald
       if (parcel.ndvi >= 0.75) {
         fillColor = '#059669';
         borderColor = '#10b981';
@@ -241,7 +237,6 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
       }
       fillOpacity = isSelected ? 0.75 : 0.55;
     } else if (layerMode === 'ndwi') {
-      // Canopy water content (cyan/blue)
       if (parcel.ndwi >= 0.45) {
         fillColor = '#0284c7';
         borderColor = '#38bdf8';
@@ -254,7 +249,6 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
       }
       fillOpacity = isSelected ? 0.75 : 0.55;
     } else if (layerMode === 'moisture') {
-      // Water stress indicator
       if (parcel.waterStress === 'Low') {
         fillColor = '#06b6d4';
         borderColor = '#22d3ee';
@@ -393,7 +387,7 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
             <span>NDVI Katmanı</span>
           </button>
 
@@ -405,7 +399,7 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+            <span className="w-2 h-2 rounded-full bg-cyan-400" />
             <span>NDWI Su Katmanı</span>
           </button>
 
@@ -417,8 +411,8 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-            <span>Su Stresi</span>
+            <span className="w-2 h-2 rounded-full bg-amber-400" />
+            <span>Su Stresi (NDMI)</span>
           </button>
         </div>
 
@@ -516,34 +510,34 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
         {layerMode === 'ndvi' && (
           <div className="flex items-center gap-2">
             <span className="text-slate-500">NDVI:</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#eab308]"></span> &lt;0.55</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#84cc16]"></span> 0.55-0.65</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#10b981]"></span> 0.65-0.75</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#059669]"></span> &gt;0.75</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#eab308]" /> &lt;0.55</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#84cc16]" /> 0.55-0.65</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#10b981]" /> 0.65-0.75</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#059669]" /> &gt;0.75</span>
           </div>
         )}
 
         {layerMode === 'ndwi' && (
           <div className="flex items-center gap-2">
             <span className="text-slate-500">NDWI:</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#f59e0b]"></span> &lt;0.30 (Kuru)</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#06b6d4]"></span> 0.30-0.45 (Orta)</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#0284c7]"></span> &gt;0.45 (Optimal)</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#f59e0b]" /> &lt;0.30 (Kuru)</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#06b6d4]" /> 0.30-0.45 (Orta)</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#0284c7]" /> &gt;0.45 (Optimal)</span>
           </div>
         )}
 
         {layerMode === 'moisture' && (
           <div className="flex items-center gap-2">
             <span className="text-slate-500">Su Stresi:</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#ef4444]"></span> Yüksek</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#f59e0b]"></span> Orta</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#06b6d4]"></span> Düşük</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#ef4444]" /> Yüksek</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#f59e0b]" /> Orta</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-[#06b6d4]" /> Düşük</span>
           </div>
         )}
 
         {layerMode === 'satellite' && (
           <div className="flex items-center gap-2 text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
             <span>Sentinel-2 L2A BOA Yansıma Katmanı (10m Çözünürlük)</span>
           </div>
         )}

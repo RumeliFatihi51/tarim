@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   Satellite, 
   CheckCircle2, 
@@ -9,124 +9,157 @@ import {
   Sparkles, 
   MapPin, 
   FileText,
-  AlertTriangle
+  AlertTriangle,
+  ShieldCheck
 } from 'lucide-react';
-import { Parcel } from '../../types';
+import { Parcel, FullAnalysisPayload } from '../../types';
 
 interface LiveAnalysisPipelineProps {
   parcel: Parcel;
-  onComplete: () => void;
+  onComplete: (payload?: FullAnalysisPayload) => void;
   isDemoMode?: boolean;
 }
 
-interface PipelineStepItem {
+interface StepUiState {
   id: string;
-  title: string;
-  techDetail: string;
-  visualStage: 'original' | 'geometry' | 'cloud' | 'ndvi' | 'ndwi' | 'stress';
+  number: number;
+  name: string;
+  description: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  techDetail?: string;
 }
+
+const DEFAULT_STAGES: StepUiState[] = [
+  { id: 'stage-1', number: 1, name: 'Parsel Geometrisi Doğrulandı', description: 'GeoJSON koordinatları ve Bounding Box hesaplandı', status: 'running' },
+  { id: 'stage-2', number: 2, name: 'Copernicus Sentinel-2 Katalog Taraması', description: 'STAC Level-2A BOA görüntüleri taranıyor', status: 'pending' },
+  { id: 'stage-3', number: 3, name: 'En Uygun Uydu Gözlemi Seçildi', description: 'Düşük bulutluluklu en güncel sahne filtrelendi', status: 'pending' },
+  { id: 'stage-4', number: 4, name: 'Uydu Verisi ve Bantlarına Erişim', description: '10m ve 20m COG raster URL’leri hazırlandı', status: 'pending' },
+  { id: 'stage-5', number: 5, name: 'Bulut ve Gölge Filtreleme (SCL)', description: 'Scene Classification Layer ile geçersiz pikseller maskelendi', status: 'pending' },
+  { id: 'stage-6', number: 6, name: 'Raster Parsel Sınırına Kırpılıyor', description: 'Seçilen poligon içi piksel matrisi ayrıştırıldı', status: 'pending' },
+  { id: 'stage-7', number: 7, name: 'Multispektral Yansıma İşleme', description: 'B02, B03, B04, B08 NIR ve B11 SWIR değerleri okundu', status: 'pending' },
+  { id: 'stage-8', number: 8, name: 'Gerçek NDVI Hesaplanıyor', description: 'Her geçerli piksel için (B08 - B04) / (B08 + B04) hesaplandı', status: 'pending' },
+  { id: 'stage-9', number: 9, name: 'Gerçek NDWI Hesaplanıyor', description: 'Her geçerli piksel için (B03 - B08) / (B03 + B08) hesaplandı', status: 'pending' },
+  { id: 'stage-10', number: 10, name: 'Gerçek NDMI ve Nem Hesaplanıyor', description: 'Her geçerli piksel için (B08 - B11) / (B08 + B11) hesaplandı', status: 'pending' },
+  { id: 'stage-11', number: 11, name: 'Tarihsel Zaman Serisi Derleniyor', description: 'Geçmiş 6-12 aylık gerçek Sentinel-2 gözlemleri tarandı', status: 'pending' },
+  { id: 'stage-12', number: 12, name: 'Yapay Zekâ Çevre Değerlendirmesi', description: 'Ölçülen veriler Gemini AI ile yorumlanıyor', status: 'pending' },
+  { id: 'stage-13', number: 13, name: 'MRV Göstergeleri Oluşturuluyor', description: 'Ölçüm, Raporlama ve Saha Doğrulama protokolü ayrıştırıldı', status: 'pending' },
+  { id: 'stage-14', number: 14, name: 'Kurumsal Denetim Raporu Hazırlandı', description: 'CSRD ve Scope 3 uyumlu resmi MRV raporu derlendi', status: 'pending' },
+];
 
 export const LiveAnalysisPipeline: React.FC<LiveAnalysisPipelineProps> = ({
   parcel,
   onComplete,
   isDemoMode = false,
 }) => {
-  const steps: PipelineStepItem[] = [
-    {
-      id: 'step-1',
-      title: 'Parsel geometrisi ve koordinat sınırları alındı',
-      techDetail: `GeoJSON Polygon (${parcel.areaHa} ha, Bounding Box hesaplandı)`,
-      visualStage: 'geometry',
-    },
-    {
-      id: 'step-2',
-      title: 'Copernicus Sentinel-2 L2A katalog taraması',
-      techDetail: 'MGRS Tile: T35SNC (Sentinel-2B MSI MultiSpectral Instrument)',
-      visualStage: 'original',
-    },
-    {
-      id: 'step-3',
-      title: 'Bulut filtreleme ve atmosferik düzeltme (Cloud Screening)',
-      techDetail: 'Bulutluluk: %4.2 (<%15 eşik değeri onaylandı, L2A BOA)',
-      visualStage: 'cloud',
-    },
-    {
-      id: 'step-4',
-      title: 'Spektral bant ayrıştırma (B02, B03, B04, B08 NIR, B11 SWIR)',
-      techDetail: '10m ve 20m zemin yansıma değerleri normalize edildi',
-      visualStage: 'original',
-    },
-    {
-      id: 'step-5',
-      title: 'NDVI Bitki Sağlığı indeksi hesaplanıyor',
-      techDetail: 'Formül: (B08 - B04) / (B08 + B04) = ' + parcel.ndvi,
-      visualStage: 'ndvi',
-    },
-    {
-      id: 'step-6',
-      title: 'NDWI (Gao) Kanopi su içeriği hesaplanıyor',
-      techDetail: 'Formül: (B08 - B11) / (B08 + B11) = ' + parcel.ndwi,
-      visualStage: 'ndwi',
-    },
-    {
-      id: 'step-7',
-      title: 'NDMI & Yüzey nem / su kısıtı analizi',
-      techDetail: 'Tahmini toprak profili nemi: %' + parcel.soilMoisture + ' (Model-türetilmiş)',
-      visualStage: 'stress',
-    },
-    {
-      id: 'step-8',
-      title: '6 aylık tarihsel zaman serisi çıkarımı',
-      techDetail: 'Nisan - Eylül 2026 periyodu (6 uydu geçişi doğrulandı)',
-      visualStage: 'stress',
-    },
-    {
-      id: 'step-9',
-      title: 'Gemini 3.8 Flash kurumsal çevre & anomali değerlendirmesi',
-      techDetail: 'Yönetici özeti, risk sinyalleri ve saha teyit protokolü oluşturuluyor',
-      visualStage: 'ndvi',
-    },
-    {
-      id: 'step-10',
-      title: 'Kurumsal MRV denetim raporu derleme',
-      techDetail: 'CSRD ve Scope 3 uyumlu resmi doğrulama çıktısı hazırlandı',
-      visualStage: 'geometry',
-    },
-  ];
-
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [stages, setStages] = useState<StepUiState[]>(DEFAULT_STAGES);
+  const [currentStageNumber, setCurrentStageNumber] = useState(1);
+  const [analysisPayload, setAnalysisPayload] = useState<FullAnalysisPayload | null>(null);
+  const [activePreviewType, setActivePreviewType] = useState<'geometry' | 'rgb' | 'ndvi' | 'ndwi' | 'ndmi'>('geometry');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const isFinishedRef = useRef(false);
 
   useEffect(() => {
-    if (currentStepIndex < steps.length) {
-      // Step durations between 350ms and 650ms for a snappy, realistic 5-second seminar demonstration
-      const timeout = setTimeout(() => {
-        setCurrentStepIndex((prev) => prev + 1);
-      }, currentStepIndex === 8 ? 800 : 450);
+    let intervalId: any = null;
+    let isCancelled = false;
 
-      return () => clearTimeout(timeout);
-    } else {
-      // Finished all steps! Complete after brief delay
-      const finishTimeout = setTimeout(() => {
-        onComplete();
-      }, 500);
-      return () => clearTimeout(finishTimeout);
+    async function runJob() {
+      try {
+        console.log('[PIPELINE] Starting live satellite analysis job for parcel:', parcel.name);
+        
+        const startRes = await fetch('/api/satellite/start-job', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parcelId: parcel.id,
+            name: parcel.name,
+            crop: parcel.crop,
+            location: parcel.location,
+            polygon: parcel.polygon,
+            isDemo: isDemoMode,
+          }),
+        });
+
+        if (!startRes.ok) {
+          throw new Error('Analiz işi başlatılamadı.');
+        }
+
+        const { jobId } = await startRes.json();
+        console.log('[PIPELINE] Job ID created:', jobId);
+
+        // Poll job status every 350ms
+        intervalId = setInterval(async () => {
+          if (isCancelled || isFinishedRef.current) return;
+
+          try {
+            const jobRes = await fetch(`/api/satellite/job/${jobId}`);
+            if (!jobRes.ok) return;
+
+            const jobData = await jobRes.json();
+            
+            if (jobData.stages && Array.isArray(jobData.stages)) {
+              setStages(jobData.stages);
+              setCurrentStageNumber(jobData.currentStageNumber || 1);
+
+              // Update preview mode based on stage
+              if (jobData.currentStageNumber >= 10) {
+                setActivePreviewType('ndmi');
+              } else if (jobData.currentStageNumber >= 9) {
+                setActivePreviewType('ndwi');
+              } else if (jobData.currentStageNumber >= 8) {
+                setActivePreviewType('ndvi');
+              } else if (jobData.currentStageNumber >= 4) {
+                setActivePreviewType('rgb');
+              }
+            }
+
+            if (jobData.status === 'completed' && jobData.result) {
+              clearInterval(intervalId);
+              isFinishedRef.current = true;
+              setAnalysisPayload(jobData.result);
+              console.log('[PIPELINE] Job completed successfully!');
+              
+              setTimeout(() => {
+                onComplete(jobData.result);
+              }, 800);
+            } else if (jobData.status === 'failed') {
+              clearInterval(intervalId);
+              setErrorMsg(jobData.error || 'İşlem sırasında hata meydana geldi.');
+            }
+          } catch (pollErr) {
+            console.warn('[PIPELINE] Poll warning:', pollErr);
+          }
+        }, 350);
+
+      } catch (err: any) {
+        console.error('[PIPELINE] Execution error:', err);
+        setErrorMsg(err.message || 'Analiz başlatılamadı.');
+      }
     }
-  }, [currentStepIndex, steps.length, onComplete]);
 
-  const currentStep = steps[Math.min(currentStepIndex, steps.length - 1)];
+    runJob();
+
+    return () => {
+      isCancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [parcel, isDemoMode, onComplete]);
+
+  const currentStage = stages[Math.min(currentStageNumber - 1, stages.length - 1)];
 
   return (
     <div className="w-full h-full bg-[#080c14] text-slate-200 flex flex-col p-4 sm:p-8 overflow-y-auto">
       {/* Header Banner */}
-      <div className="max-w-5xl mx-auto w-full mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+      <div className="max-w-6xl mx-auto w-full mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-xs font-bold font-mono tracking-wider uppercase text-emerald-400">
-              Canlı Spektral Analiz Pipeline
+              Canlı Spektral Analiz Pipeline (14 Aşama)
             </span>
             <span className="text-slate-600">•</span>
-            <span className="text-xs font-mono text-slate-400">Sentinel-2B MSI</span>
+            <span className="text-xs font-mono text-slate-400">
+              {isDemoMode ? 'Demo Arşivi' : 'Copernicus Sentinel-2 L2A BOA'}
+            </span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
             {parcel.name}
@@ -143,42 +176,57 @@ export const LiveAnalysisPipeline: React.FC<LiveAnalysisPipelineProps> = ({
           <div className="text-right font-mono">
             <span className="text-[11px] text-slate-500 block uppercase">İlerleme</span>
             <span className="text-base font-bold text-emerald-400">
-              %{Math.min(100, Math.round(((currentStepIndex + 1) / steps.length) * 100))}
+              %{Math.min(100, Math.round((currentStageNumber / stages.length) * 100))}
             </span>
           </div>
           <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center">
-            <RotateCw className="w-5 h-5 text-emerald-400 animate-spin" />
+            {errorMsg ? (
+              <AlertTriangle className="w-5 h-5 text-rose-400" />
+            ) : (
+              <RotateCw className="w-5 h-5 text-emerald-400 animate-spin" />
+            )}
           </div>
         </div>
       </div>
 
+      {errorMsg && (
+        <div className="max-w-6xl mx-auto w-full mb-6 p-4 rounded-xl bg-rose-500/10 border border-rose-500/40 text-rose-300 flex items-center gap-3 text-xs">
+          <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+          <div>
+            <span className="font-bold">Analiz Hatası:</span> {errorMsg}
+          </div>
+        </div>
+      )}
+
       {/* Main Grid: Pipeline Step List (Left) + Satellite Visual Simulation (Right) */}
-      <div className="max-w-5xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="max-w-6xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left: Interactive Pipeline Step Flow (7 cols) */}
         <div className="lg:col-span-7 space-y-2.5 bg-[#090d16]/90 border border-slate-800/90 rounded-2xl p-4 sm:p-5 shadow-2xl">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800 text-xs text-slate-400">
             <span className="font-bold text-slate-300 uppercase tracking-wider text-[11px]">
-              Analiz Aşamaları
+              Analitik İşlem Aşamaları
             </span>
             <span className="font-mono text-[10px] text-slate-500">
-              {Math.min(currentStepIndex + 1, steps.length)} / {steps.length} Aşama
+              {Math.min(currentStageNumber, stages.length)} / {stages.length} Aşama
             </span>
           </div>
 
-          <div className="space-y-2 pt-1">
-            {steps.map((step, idx) => {
-              const isCompleted = idx < currentStepIndex;
-              const isRunning = idx === currentStepIndex;
-              const isWaiting = idx > currentStepIndex;
+          <div className="space-y-1.5 pt-1 max-h-[580px] overflow-y-auto pr-1">
+            {stages.map((stage, idx) => {
+              const isCompleted = stage.status === 'completed';
+              const isRunning = stage.status === 'running';
+              const isFailed = stage.status === 'failed';
 
               return (
                 <div
-                  key={step.id}
-                  className={`p-3 rounded-xl border transition-all duration-300 flex items-start gap-3 ${
+                  key={stage.id}
+                  className={`p-2.5 rounded-xl border transition-all duration-300 flex items-start gap-3 ${
                     isRunning
                       ? 'bg-emerald-500/10 border-emerald-500/40 text-white shadow-lg'
                       : isCompleted
                       ? 'bg-slate-900/40 border-slate-800/80 text-slate-300'
+                      : isFailed
+                      ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
                       : 'bg-slate-950/20 border-transparent text-slate-600 opacity-60'
                   }`}
                 >
@@ -187,6 +235,8 @@ export const LiveAnalysisPipeline: React.FC<LiveAnalysisPipelineProps> = ({
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                     ) : isRunning ? (
                       <RotateCw className="w-4 h-4 text-emerald-400 animate-spin" />
+                    ) : isFailed ? (
+                      <AlertTriangle className="w-4 h-4 text-rose-400" />
                     ) : (
                       <div className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[10px] font-mono text-slate-500">
                         {idx + 1}
@@ -197,7 +247,7 @@ export const LiveAnalysisPipeline: React.FC<LiveAnalysisPipelineProps> = ({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className={`text-xs font-semibold truncate ${isRunning ? 'text-white font-bold' : isCompleted ? 'text-slate-200' : 'text-slate-500'}`}>
-                        {step.title}
+                        {stage.name}
                       </span>
                       {isRunning && (
                         <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider animate-pulse">
@@ -206,11 +256,9 @@ export const LiveAnalysisPipeline: React.FC<LiveAnalysisPipelineProps> = ({
                       )}
                     </div>
 
-                    {(isRunning || isCompleted) && (
-                      <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-                        {step.techDetail}
-                      </div>
-                    )}
+                    <div className="text-[11px] font-mono text-slate-400 mt-0.5">
+                      {stage.techDetail || stage.description}
+                    </div>
                   </div>
                 </div>
               );
@@ -224,88 +272,109 @@ export const LiveAnalysisPipeline: React.FC<LiveAnalysisPipelineProps> = ({
             <div className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
               <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Spektral Önizleme</span>
+                <span>Gerçek Spektral Görüntü</span>
               </span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                {currentStep.visualStage === 'original' && 'RGB True Color'}
-                {currentStep.visualStage === 'geometry' && 'Parsel Vektör Sınırı'}
-                {currentStep.visualStage === 'cloud' && 'Bulut Maskesi (SCL)'}
-                {currentStep.visualStage === 'ndvi' && 'NDVI False Color'}
-                {currentStep.visualStage === 'ndwi' && 'NDWI Sıvı Su Katsayısı'}
-                {currentStep.visualStage === 'stress' && 'Hidrik Stres Isı Haritası'}
+                {activePreviewType === 'geometry' && 'Parsel Vektör Sınırı'}
+                {activePreviewType === 'rgb' && 'Sentinel-2 L2A (RGB)'}
+                {activePreviewType === 'ndvi' && 'Hesaplanan NDVI Matrisi'}
+                {activePreviewType === 'ndwi' && 'Hesaplanan NDWI Su İndeksi'}
+                {activePreviewType === 'ndmi' && 'Hesaplanan NDMI Nem İndeksi'}
               </span>
             </div>
 
             {/* Satellite Image Graphic Frame */}
             <div className="relative aspect-square w-full bg-slate-950 overflow-hidden flex items-center justify-center">
-              {/* Simulated Esri / Sentinel Tile with False-Color filter based on visualStage */}
-              <div 
-                className="absolute inset-0 bg-cover bg-center transition-all duration-700"
-                style={{
-                  backgroundImage: `url('https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80')`,
-                  filter: 
-                    currentStep.visualStage === 'ndvi'
-                      ? 'hue-rotate(60deg) saturate(2.2) contrast(1.3)'
-                      : currentStep.visualStage === 'ndwi'
-                      ? 'hue-rotate(180deg) saturate(1.8) contrast(1.2)'
-                      : currentStep.visualStage === 'cloud'
-                      ? 'brightness(1.3) contrast(1.1)'
-                      : currentStep.visualStage === 'stress'
-                      ? 'hue-rotate(330deg) saturate(2.0)'
-                      : 'none',
-                }}
-              />
+              {/* If real raster PNG has arrived from backend, display it directly */}
+              {analysisPayload?.visualizations?.rgbPngBase64 && activePreviewType === 'rgb' ? (
+                <img
+                  src={analysisPayload.visualizations.rgbPngBase64}
+                  alt="Sentinel-2 L2A True Color"
+                  className="w-full h-full object-contain p-4 transition-all duration-500"
+                />
+              ) : analysisPayload?.visualizations?.ndviPngBase64 && activePreviewType === 'ndvi' ? (
+                <img
+                  src={analysisPayload.visualizations.ndviPngBase64}
+                  alt="Calculated NDVI Raster"
+                  className="w-full h-full object-contain p-4 transition-all duration-500"
+                />
+              ) : analysisPayload?.visualizations?.ndwiPngBase64 && activePreviewType === 'ndwi' ? (
+                <img
+                  src={analysisPayload.visualizations.ndwiPngBase64}
+                  alt="Calculated NDWI Raster"
+                  className="w-full h-full object-contain p-4 transition-all duration-500"
+                />
+              ) : analysisPayload?.visualizations?.ndmiPngBase64 && activePreviewType === 'ndmi' ? (
+                <img
+                  src={analysisPayload.visualizations.ndmiPngBase64}
+                  alt="Calculated NDMI Raster"
+                  className="w-full h-full object-contain p-4 transition-all duration-500"
+                />
+              ) : analysisPayload?.visualizations?.rgbPreviewUrl ? (
+                <img
+                  src={analysisPayload.visualizations.rgbPreviewUrl}
+                  alt="Sentinel-2 STAC Preview"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                /* High-tech vector wireframe scan while bands are downloading */
+                <div className="absolute inset-0 bg-[#060a12] flex flex-col items-center justify-center p-6 text-center">
+                  <div className="w-32 h-32 relative mb-4">
+                    <svg className="w-full h-full text-emerald-500/30 animate-pulse" viewBox="0 0 100 100">
+                      <polygon
+                        points="25,20 80,15 85,80 15,85"
+                        fill="rgba(16, 185, 129, 0.15)"
+                        stroke="#10b981"
+                        strokeWidth="2"
+                        strokeDasharray="4 2"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Satellite className="w-10 h-10 text-emerald-400 animate-bounce" />
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono text-emerald-400 font-bold block mb-1">
+                    Level-2A BOA Raster Ayrıştırılıyor...
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-500 max-w-xs">
+                    Piksel seviyesinde atmosferik düzeltme ve bulut filtreleme yürütülüyor
+                  </span>
+                </div>
+              )}
 
               {/* Raster Scanline Effect */}
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-emerald-500/15 to-transparent h-16 w-full animate-pulse pointer-events-none" />
-
-              {/* Parcel boundary SVG overlay */}
-              <div className="absolute inset-0 flex items-center justify-center p-8 pointer-events-none">
-                <svg className="w-48 h-48 drop-shadow-[0_0_10px_rgba(16,185,129,0.5)]" viewBox="0 0 100 100">
-                  <polygon
-                    points="20,25 80,15 85,75 15,80"
-                    fill={
-                      currentStep.visualStage === 'ndvi' 
-                        ? 'rgba(16, 185, 129, 0.45)' 
-                        : currentStep.visualStage === 'ndwi'
-                        ? 'rgba(6, 182, 212, 0.45)'
-                        : 'rgba(16, 185, 129, 0.25)'
-                    }
-                    stroke="#ffffff"
-                    strokeWidth="3"
-                    strokeDasharray={currentStep.visualStage === 'geometry' ? '4 2' : 'none'}
-                  />
-                </svg>
-              </div>
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-emerald-500/10 to-transparent h-16 w-full animate-pulse pointer-events-none" />
 
               {/* Coordinates Badge */}
-              <div className="absolute bottom-3 left-3 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-lg text-[10px] font-mono text-slate-300 border border-slate-800">
-                38.6420°K, 27.1180°D
+              <div className="absolute bottom-3 left-3 bg-slate-950/90 backdrop-blur-md px-2.5 py-1 rounded-lg text-[10px] font-mono text-slate-300 border border-slate-800">
+                {parcel.polygon[0]?.[0].toFixed(4)}°K, {parcel.polygon[0]?.[1].toFixed(4)}°D
               </div>
 
-              {/* Scene ID */}
-              <div className="absolute top-3 right-3 bg-slate-950/80 backdrop-blur-md px-2 py-0.5 rounded text-[9px] font-mono text-slate-400 border border-slate-800">
-                S2B_L2A_20260908
+              {/* Tile / Scene Badge */}
+              <div className="absolute top-3 right-3 bg-slate-950/90 backdrop-blur-md px-2 py-0.5 rounded text-[9px] font-mono text-emerald-400 border border-emerald-500/30">
+                {analysisPayload?.satelliteMetadata?.sceneId ? analysisPayload.satelliteMetadata.sceneId.slice(0, 22) + '...' : 'T35SNC'}
               </div>
             </div>
 
-            {/* Quick Live Telemetry */}
+            {/* Live Telemetry Footer */}
             <div className="p-4 bg-slate-950/90 border-t border-slate-800 grid grid-cols-2 gap-2 text-xs font-mono">
               <div>
                 <span className="text-[10px] text-slate-500 uppercase block">Sensör</span>
-                <span className="text-slate-200">Sentinel-2B MSI</span>
+                <span className="text-slate-200">
+                  {analysisPayload?.satelliteMetadata?.sensor || 'Sentinel-2B MSI'}
+                </span>
               </div>
               <div>
-                <span className="text-[10px] text-slate-500 uppercase block">Spektral Çözünürlük</span>
-                <span className="text-slate-200">10 Metre (B04/B08)</span>
+                <span className="text-[10px] text-slate-500 uppercase block">Çözünürlük</span>
+                <span className="text-slate-200">10 Metre (B02, B03, B04, B08)</span>
               </div>
               <div>
                 <span className="text-[10px] text-slate-500 uppercase block">Atmosferik Seviye</span>
                 <span className="text-emerald-400">BOA (Bottom-of-Atmosphere)</span>
               </div>
               <div>
-                <span className="text-[10px] text-slate-500 uppercase block">Gözlem Tarihi</span>
-                <span className="text-slate-200">08 Eylül 2026</span>
+                <span className="text-[10px] text-slate-500 uppercase block">Bulut Filtresi</span>
+                <span className="text-emerald-400">SCL Geçerli</span>
               </div>
             </div>
           </div>

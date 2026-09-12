@@ -2,6 +2,7 @@ export type RiskStatus = 'healthy' | 'moderate' | 'high-risk';
 export type WaterStressLevel = 'Low' | 'Medium' | 'High';
 export type PlantHealthLevel = 'Poor' | 'Moderate' | 'Good';
 export type CarbonIndicatorTrend = 'Negative' | 'Stable' | 'Positive';
+export type AnalysisMode = 'LIVE' | 'DEMO';
 
 export interface SpectralBands {
   B02: number; // Blue (490 nm)
@@ -10,6 +11,33 @@ export interface SpectralBands {
   B08: number; // NIR (842 nm)
   B11: number; // SWIR (1610 nm)
   B12?: number; // SWIR-2 (2190 nm)
+}
+
+export interface PixelStatistics {
+  totalPixels: number;
+  validPixels: number;
+  cloudMaskedPixels: number;
+  validPixelRatio: number; // e.g. 0.94
+  cloudMaskedRatio: number; // e.g. 0.06
+  resolutionMeters: number; // 10
+}
+
+export interface IndexDistributionStats {
+  mean: number;
+  median: number;
+  min: number;
+  max: number;
+  stdDev: number;
+  count: number;
+}
+
+export interface RasterVisualizations {
+  rgbPreviewUrl?: string;
+  rgbPngBase64?: string;
+  ndviPngBase64?: string;
+  ndwiPngBase64?: string;
+  ndmiPngBase64?: string;
+  bounds?: [[number, number], [number, number]]; // [[south, west], [north, east]]
 }
 
 export interface SatelliteMetadata {
@@ -22,15 +50,19 @@ export interface SatelliteMetadata {
   spatialResolutionMeters: number; // 10
   processingLevel: string; // 'L2A (Bottom of Atmosphere Surface Reflectance)'
   bandsUsed: string[];
+  dataSource?: string;
 }
 
 export interface HistoricalObservation {
   date: string;
   ndvi: number;
   ndwi: number;
+  ndmi?: number;
   soilMoisture: number;
   sustainabilityScore: number;
   cloudCover?: number;
+  sceneId?: string;
+  validPixelRatio?: number;
 }
 
 export interface ParcelAlert {
@@ -106,6 +138,7 @@ export interface AIAnalysisResult {
   };
   confidenceLevel: 'High' | 'Medium' | 'Low';
   confidenceJustification: string;
+  limitations?: string[];
   generatedAt?: string;
   modelUsed?: string;
 }
@@ -125,11 +158,19 @@ export interface FullAnalysisPayload {
     plantHealth: PlantHealthLevel;
     carbonIndicator: CarbonIndicatorTrend;
   };
+  pixelStats?: PixelStatistics;
+  spectralStats?: {
+    ndvi: IndexDistributionStats;
+    ndwi: IndexDistributionStats;
+    ndmi: IndexDistributionStats;
+  };
+  visualizations?: RasterVisualizations;
   historicalObservations: HistoricalObservation[];
   aiAssessment: AIAnalysisResult;
   isDemoMode: boolean;
   dataSourceLabel: string;
   timestamp?: string;
+  mrvReport?: any;
 }
 
 export interface MRVReportRecord {
@@ -147,9 +188,10 @@ export interface MRVReportRecord {
   satelliteMetadata: SatelliteMetadata;
   isDemoMode: boolean;
   verifiedBy?: string;
+  payload?: FullAnalysisPayload;
 }
 
 export type ActiveTab = 'monitor' | 'analysis' | 'reports' | 'methodology';
 export type TabType = ActiveTab;
-export type LayerMode = 'satellite' | 'ndvi' | 'ndwi' | 'water';
+export type LayerMode = 'satellite' | 'rgb' | 'ndvi' | 'ndwi' | 'ndmi' | 'water';
 export type AnalyticsSubTab = 'vegetation' | 'water' | 'soil' | 'carbon';
