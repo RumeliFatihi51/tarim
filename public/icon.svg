@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a1526" />
+      <stop offset="50%" stop-color="#08101e" />
+      <stop offset="100%" stop-color="#050a12" />
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <radialGradient id="satelliteGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0" />
+    </radialGradient>
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#059669" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle for Android -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#1e293b" stroke-width="2" stroke-dasharray="8 8" opacity="0.6" />
+  <circle cx="256" cy="256" r="160" fill="url(#satelliteGlow)" />
+
+  <!-- Orbit ring -->
+  <ellipse cx="256" cy="256" rx="180" ry="85" fill="none" stroke="url(#cyanGrad)" stroke-width="4" transform="rotate(-28 256 256)" opacity="0.8" />
+  
+  <!-- Satellite on orbit -->
+  <g transform="translate(378, 168) rotate(20)">
+    <rect x="-16" y="-10" width="32" height="20" rx="4" fill="#e2e8f0" />
+    <rect x="-38" y="-6" width="18" height="12" rx="2" fill="#38bdf8" />
+    <rect x="20" y="-6" width="18" height="12" rx="2" fill="#38bdf8" />
+    <circle cx="0" cy="0" r="4" fill="#10b981" />
+  </g>
+
+  <!-- Central Terra / Leaf emblem -->
+  <g filter="url(#drop)" transform="translate(256, 268)">
+    <!-- Leaf / Field boundary stylized polygon -->
+    <path d="M 0 -105 C 65 -75 105 -15 95 60 C 85 110 35 135 0 135 C -35 135 -85 110 -95 60 C -105 -15 -65 -75 0 -105 Z" fill="url(#emeraldGrad)" />
+    <!-- Leaf veins & field grid lines -->
+    <path d="M 0 -90 L 0 120" stroke="#064e3b" stroke-width="5" stroke-linecap="round" />
+    <path d="M 0 -40 L 45 -10" stroke="#064e3b" stroke-width="4" stroke-linecap="round" />
+    <path d="M 0 -10 L -45 20" stroke="#064e3b" stroke-width="4" stroke-linecap="round" />
+    <path d="M 0 30 L 45 60" stroke="#064e3b" stroke-width="4" stroke-linecap="round" />
+    
+    <!-- Central sensor beacon dot -->
+    <circle cx="0" cy="-105" r="10" fill="#38bdf8" stroke="#ffffff" stroke-width="3" />
+  </g>
+
+  <!-- Corner Sentinel Badge -->
+  <rect x="48" y="48" width="116" height="34" rx="17" fill="#0f172a" stroke="#334155" stroke-width="1.5" />
+  <circle cx="68" cy="65" r="5" fill="#10b981" />
+  <text x="82" y="70" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="700" letter-spacing="1">S2-MSI</text>
+</svg>

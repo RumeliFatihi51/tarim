@@ -197,6 +197,13 @@ export interface WeatherData {
   et0MmPerDay: number;
   droughtRiskIndex: 'Low' | 'Moderate' | 'High' | 'Severe';
   correlationSummary: string;
+  droughtStressCategory?: string;
+  dataSource?: string;
+  tempMinC?: number;
+  tempMaxC?: number;
+  windSpeedKmh?: number;
+  soilTemperatureC?: number;
+  observationDate?: string;
 }
 
 export interface PracticeSignal {
@@ -211,6 +218,10 @@ export interface PracticeSignal {
   verificationRequirement: string;
   verificationStatus: 'PENDING' | 'SCHEDULED' | 'VERIFIED' | 'REJECTED';
   observationDate: string;
+  detectedStatus?: string;
+  practiceName?: string;
+  spectralEvidence?: string;
+  mrvAuditImpact?: string;
 }
 
 export interface FieldVerificationTask {
@@ -273,7 +284,7 @@ export interface MRVReportRecord {
   payload?: FullAnalysisPayload;
 }
 
-export type ActiveTab = 'monitor' | 'analysis' | 'parcels' | 'reports' | 'assistant' | 'methodology' | 'settings';
+export type ActiveTab = 'monitor' | 'analysis' | 'parcels' | 'reports' | 'assistant' | 'methodology' | 'settings' | 'practices';
 export type TabType = ActiveTab;
 export type LayerMode = 'satellite' | 'rgb' | 'ndvi' | 'ndwi' | 'ndmi' | 'water' | 'stress';
 export type AnalyticsSubTab = 'vegetation' | 'water' | 'soil' | 'carbon';

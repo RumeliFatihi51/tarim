@@ -18,7 +18,9 @@ import {
   ArrowRight,
   ExternalLink,
   MapPin,
-  Sparkles
+  Sparkles,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react';
 import { Parcel, PracticeSignal, FieldVerificationTask, WeatherData } from '../../types';
 
@@ -72,6 +74,21 @@ export const PracticesView: React.FC<PracticesViewProps> = ({
   const [practiceSignals, setPracticeSignals] = useState<PracticeSignal[]>([]);
   const [taskFilter, setTaskFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [taskPhotos, setTaskPhotos] = useState<Record<string, string>>({
+    [`task-02-${activeParcel.id}`]: 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=300&auto=format&fit=crop&q=80',
+  });
+
+  const handleCapturePhoto = (taskId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result) {
+        setTaskPhotos((prev) => ({ ...prev, [taskId]: reader.result as string }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     // Fetch live weather and practice data for active parcel
@@ -452,6 +469,35 @@ export const PracticesView: React.FC<PracticesViewProps> = ({
                       {task.completedAt && (
                         <span className="text-[10px] text-emerald-400">• Tamamlandı: {task.completedAt}</span>
                       )}
+                    </div>
+
+                    {/* Mobile Camera Evidence & Photo Attachment */}
+                    <div className="mt-3 flex items-center gap-3">
+                      {taskPhotos[task.id] && (
+                        <div className="relative group">
+                          <img
+                            src={taskPhotos[task.id]}
+                            alt="Saha Doğrulama Kanıtı"
+                            className="w-14 h-14 rounded-lg object-cover border border-emerald-500/40 shadow-sm"
+                            referrerPolicy="no-referrer"
+                          />
+                          <span className="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] text-emerald-300 text-center font-bold py-0.5 rounded-b-lg">
+                            GPS Kanıtı
+                          </span>
+                        </div>
+                      )}
+
+                      <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 text-[11px] font-semibold border border-slate-700 active:scale-95 transition">
+                        <Camera className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{taskPhotos[task.id] ? 'Yeni Fotoğraf Çek' : 'Kamera ile Fotoğraf Ekle'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={(e) => handleCapturePhoto(task.id, e)}
+                          className="hidden"
+                        />
+                      </label>
                     </div>
                   </div>
                 </div>

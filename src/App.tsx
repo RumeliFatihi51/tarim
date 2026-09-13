@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
-import { Header } from './components/layout/Header';
-import { Sidebar } from './components/layout/Sidebar';
+import { WindowsTitleBar } from './components/desktop/WindowsTitleBar';
+import { WindowsRibbonBar } from './components/desktop/WindowsRibbonBar';
+import { WindowsSidebarExplorer } from './components/desktop/WindowsSidebarExplorer';
+import { WindowsStatusBar } from './components/desktop/WindowsStatusBar';
+import { WindowsExeInstallerModal } from './components/desktop/WindowsExeInstallerModal';
+import { WindowsCloseDialog } from './components/desktop/WindowsCloseDialog';
 import { ParcelMap } from './components/map/ParcelMap';
 import { SelectedParcelCard } from './components/map/SelectedParcelCard';
 import { LiveAnalysisPipeline } from './components/pipeline/LiveAnalysisPipeline';
@@ -12,7 +16,7 @@ import { PracticesView } from './components/practices/PracticesView';
 import { MRVReportModal } from './components/reports/MRVReportModal';
 import { INITIAL_PARCELS } from './data/parcels';
 import { Parcel, ActiveTab, FullAnalysisPayload } from './types';
-import { Activity } from 'lucide-react';
+import { Activity, Play, Download, HardDrive, CheckCircle2 } from 'lucide-react';
 import { getDemoAnalysisPayload } from './demo/sampleData';
 
 export default function App() {
@@ -25,21 +29,17 @@ export default function App() {
   // Custom polygon drawing state
   const [isDrawingMode, setIsDrawingMode] = useState(false);
 
-  // Default to LIVE Sentinel-2 mode, user can toggle to DEMO if needed
+  // Default to LIVE Sentinel-2 mode
   const [isDemoMode, setIsDemoMode] = useState(false);
 
-  // MRV Modal State
+  // Windows Desktop Modals & States
+  const [exeModalOpen, setExeModalOpen] = useState(false);
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [mrvModalOpen, setMrvModalOpen] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
-  // Quick Preset Selection
-  const handleSelectQuickPreset = (presetId: string) => {
-    const found = INITIAL_PARCELS.find((p) => p.id === presetId);
-    if (found) {
-      setSelectedParcel(found);
-      setIsDrawingMode(false);
-    }
-  };
+  const [isMaximized, setIsMaximized] = useState(true);
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [trayNotification, setTrayNotification] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Trigger Satellite Analysis Pipeline
   const handleStartAnalysis = () => {
@@ -64,14 +64,21 @@ export default function App() {
     setMrvModalOpen(true);
   };
 
-  // Finished custom polygon drawing on map
+  // Quick Preset Selection
+  const handleSelectQuickPreset = (presetId: string) => {
+    const found = INITIAL_PARCELS.find((p) => p.id === presetId);
+    if (found) {
+      setSelectedParcel(found);
+      setIsDrawingMode(false);
+    }
+  };
+
+  // Custom polygon drawing on map
   const handleFinishCustomDrawing = (coords: [number, number][]) => {
     setIsDrawingMode(false);
 
-    // Compute approximate area in ha from coords
     let areaHa = 4.0;
     if (coords.length >= 3) {
-      // Shoelace approximation for small coordinates
       let area = 0;
       const n = coords.length;
       for (let i = 0; i < n; i++) {
@@ -108,166 +115,266 @@ export default function App() {
     setSelectedParcel(customParcel);
   };
 
+  // Windows Window Control Actions
+  const handleMinimize = () => {
+    setIsMinimized(true);
+    setTrayNotification(true);
+  };
+
+  const handleRestoreFromTray = () => {
+    setIsMinimized(false);
+    setTrayNotification(false);
+  };
+
+  const handleToggleMaximize = () => {
+    setIsMaximized(!isMaximized);
+  };
+
+  const handleOpenCloseDialog = () => {
+    setCloseDialogOpen(true);
+  };
+
+  const handleConfirmExit = () => {
+    setCloseDialogOpen(false);
+    // Alert or minimize
+    setIsMinimized(true);
+    setTrayNotification(true);
+  };
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#080c14] text-slate-100 antialiased font-sans">
-      {/* Sidebar Navigation */}
-      <Sidebar
-        activeTab={activeTab}
-        onTabChange={(tab) => {
-          setActiveTab(tab);
-          setMobileSidebarOpen(false);
-        }}
-        isOpen={mobileSidebarOpen}
-        onClose={() => setMobileSidebarOpen(false)}
-        isDemoMode={isDemoMode}
-      />
+    <div
+      id="windows-workstation-root"
+      className="w-full h-full min-h-full bg-[#050811] flex items-center justify-center p-0 overflow-hidden font-sans text-slate-100 select-none"
+    >
+      {/* Minimized Tray Banner if window is minimized */}
+      {isMinimized ? (
+        <div className="flex flex-col items-center justify-center gap-4 text-center p-6 bg-[#0c1222] border border-slate-700 rounded-2xl shadow-2xl animate-in zoom-in-95">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/20">
+            <HardDrive className="w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-white">TerraSat AI Workstation Sistem Tepsisinde</h3>
+            <p className="text-xs text-slate-400 mt-1">
+              Copernicus Sentinel-2 L2A izleme motoru arka planda çalışmaya devam ediyor.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleRestoreFromTray}
+              className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 transition active:scale-95"
+            >
+              Pencereyi Geri Yükle
+            </button>
+            <button
+              onClick={() => setExeModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition"
+            >
+              Setup.exe İndir
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* The Windows 11 Desktop Workstation Window Frame */
+        <div
+          className={`w-full h-full bg-[#0a0f1d] flex flex-col border border-white/[0.12] shadow-2xl overflow-hidden ${
+            isMaximized ? 'rounded-none' : 'max-w-7xl max-h-[92vh] rounded-none md:rounded-xl border-slate-700'
+          }`}
+        >
+          {/* 1. Windows Native Title Bar (Mica/Acrylic style + Menus + Window Controls + Direct EXE) */}
+          <WindowsTitleBar
+            isMaximized={isMaximized}
+            onToggleMaximize={handleToggleMaximize}
+            onMinimize={handleMinimize}
+            onClose={handleOpenCloseDialog}
+            onOpenExeModal={() => setExeModalOpen(true)}
+            onSelectTab={(t) => setActiveTab(t as ActiveTab)}
+            activeTab={activeTab}
+          />
 
-      {/* Main App Container */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        {/* Top Header */}
-        <Header
-          activeTab={activeTab}
-          selectedParcel={selectedParcel}
-          onSearchLocation={(query) => {
-            if (query.toLowerCase().includes('emiralem')) {
-              handleSelectQuickPreset('emiralem-01');
-            } else if (query.toLowerCase().includes('karasu') || query.toLowerCase().includes('domates')) {
-              handleSelectQuickPreset('042');
-            } else if (query.toLowerCase().includes('pamuk')) {
-              handleSelectQuickPreset('063');
-            }
-          }}
-          onSelectQuickDemo={() => handleSelectQuickPreset('emiralem-01')}
-          onStartAnalysis={handleStartAnalysis}
-          isAnalyzing={isAnalyzing}
-          onToggleMobileMenu={() => setMobileSidebarOpen(!mobileSidebarOpen)}
-          isDemoMode={isDemoMode}
-          onToggleDemoMode={setIsDemoMode}
-        />
+          {/* 2. Windows Ribbon Bar (GIS and Remote Sensing quick action tiles) */}
+          <WindowsRibbonBar
+            activeTab={activeTab}
+            onSelectTab={(t) => setActiveTab(t as ActiveTab)}
+            selectedParcel={selectedParcel}
+            onStartAnalysis={handleStartAnalysis}
+            isAnalyzing={isAnalyzing}
+            onOpenReportModal={handleOpenReportModal}
+            onOpenExeModal={() => setExeModalOpen(true)}
+            isDrawingMode={isDrawingMode}
+            onToggleDrawing={() => setIsDrawingMode(!isDrawingMode)}
+            isDemoMode={isDemoMode}
+            onToggleDemoMode={() => setIsDemoMode(!isDemoMode)}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+          />
 
-        {/* Dynamic Views based on Active Tab */}
-        <div className="flex-1 overflow-hidden relative">
-          {/* TAB 1: MONITOR (Map + Right Selection Panel) */}
-          {activeTab === 'monitor' && (
-            <div className="relative w-full h-full flex flex-col lg:flex-row">
-              {/* Map Canvas */}
-              <div className="flex-1 h-full relative">
-                <ParcelMap
-                  parcels={INITIAL_PARCELS}
-                  selectedParcel={selectedParcel}
-                  onSelectParcel={(p) => setSelectedParcel(p)}
-                  isDrawingMode={isDrawingMode}
-                  onFinishDrawing={handleFinishCustomDrawing}
-                  onCancelDrawing={() => setIsDrawingMode(false)}
-                  analysisPayload={analysisPayload}
-                />
-              </div>
+          {/* 3. Main Workspace Area: Split Left Explorer Dock + Center Document Area */}
+          <div className="flex-1 w-full flex overflow-hidden relative bg-[#070b16]">
+            {/* Left Explorer Dock (Parcels, Spectral Bands, Indices) */}
+            {isSidebarOpen && (
+              <WindowsSidebarExplorer
+                parcels={INITIAL_PARCELS}
+                selectedParcel={selectedParcel}
+                onSelectParcel={(p) => {
+                  setSelectedParcel(p);
+                  setIsDrawingMode(false);
+                }}
+                onOpenReport={(p) => {
+                  setSelectedParcel(p);
+                  handleOpenReportModal();
+                }}
+              />
+            )}
 
-              {/* Selected Area Floating Card on the Right */}
-              <div className="absolute top-4 right-4 z-20 pointer-events-auto">
-                <SelectedParcelCard
-                  parcel={selectedParcel}
-                  onStartAnalysis={handleStartAnalysis}
-                  isAnalyzing={isAnalyzing}
-                  isDrawing={isDrawingMode}
-                  onToggleDrawing={() => setIsDrawingMode(!isDrawingMode)}
-                  isDemoMode={isDemoMode}
-                  onSelectQuickPreset={handleSelectQuickPreset}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: ANALYSIS (Live Pipeline OR Analysis Result View) */}
-          {activeTab === 'analysis' && (
-            <div className="w-full h-full">
-              {isAnalyzing ? (
-                <LiveAnalysisPipeline
-                  parcel={selectedParcel || INITIAL_PARCELS[0]}
-                  onComplete={handlePipelineCompleted}
-                  isDemoMode={isDemoMode}
-                />
-              ) : analysisPayload ? (
-                <AnalysisResultView
-                  analysisData={analysisPayload}
-                  onOpenReport={handleOpenReportModal}
-                  onBackToMap={() => setActiveTab('monitor')}
-                />
-              ) : (
-                /* Empty state prompting user to start */
-                <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-[#080c14]">
-                  <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4">
-                    <Activity className="w-8 h-8 animate-pulse" />
+            {/* Center Workstation Document Viewport */}
+            <main className="flex-1 h-full overflow-hidden relative flex flex-col bg-[#060a14]">
+              {/* TAB 1: MONITOR (GIS Map with Floating Parcel Inspector) */}
+              {activeTab === 'monitor' && (
+                <div className="relative w-full h-full flex flex-col">
+                  {/* Interactive Leaflet Satellite GIS Canvas */}
+                  <div className="flex-1 h-full relative">
+                    <ParcelMap
+                      parcels={INITIAL_PARCELS}
+                      selectedParcel={selectedParcel}
+                      onSelectParcel={(p) => setSelectedParcel(p)}
+                      isDrawingMode={isDrawingMode}
+                      onFinishDrawing={handleFinishCustomDrawing}
+                      onCancelDrawing={() => setIsDrawingMode(false)}
+                      analysisPayload={analysisPayload}
+                    />
                   </div>
-                  <h2 className="text-xl font-bold text-white">Henüz Bir Alan Analiz Edilmedi</h2>
-                  <p className="text-xs text-slate-400 max-w-sm mt-1 mb-5">
-                    Harita üzerinden bir parsel seçin veya hemen Emiralem Zeytinliği canlı Sentinel-2 analizini başlatın.
-                  </p>
-                  <button
-                    onClick={handleStartAnalysis}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-lg shadow-emerald-500/20 transition active:scale-95"
-                  >
-                    Emiralem Zeytinliği Analizini Başlat
-                  </button>
+
+                  {/* Desktop Bottom Floating Selected Parcel Card */}
+                  <div className="absolute bottom-3 left-3 right-3 sm:right-auto sm:max-w-md z-20 pointer-events-auto">
+                    <SelectedParcelCard
+                      parcel={selectedParcel}
+                      onStartAnalysis={handleStartAnalysis}
+                      isAnalyzing={isAnalyzing}
+                      isDrawing={isDrawingMode}
+                      onToggleDrawing={() => setIsDrawingMode(!isDrawingMode)}
+                      isDemoMode={isDemoMode}
+                      onSelectQuickPreset={handleSelectQuickPreset}
+                    />
+                  </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* TAB 3: AI ASSISTANT */}
-          {activeTab === 'assistant' && (
-            <div className="w-full h-full">
-              <AICopilotView
-                parcels={INITIAL_PARCELS}
-                selectedParcel={selectedParcel}
-                onSelectParcel={(p) => setSelectedParcel(p)}
-                onOpenReport={(p) => {
-                  setSelectedParcel(p);
-                  handleOpenReportModal();
-                }}
-                onStartAnalysis={handleStartAnalysis}
-              />
-            </div>
-          )}
+              {/* TAB 2: ANALYSIS (Live 14-Stage Sentinel-2 Pipeline OR Results) */}
+              {activeTab === 'analysis' && (
+                <div className="w-full h-full overflow-y-auto p-4 sm:p-6 bg-[#060a14]">
+                  {isAnalyzing ? (
+                    <LiveAnalysisPipeline
+                      parcel={selectedParcel || INITIAL_PARCELS[0]}
+                      onComplete={handlePipelineCompleted}
+                      isDemoMode={isDemoMode}
+                    />
+                  ) : analysisPayload ? (
+                    <AnalysisResultView
+                      analysisData={analysisPayload}
+                      onOpenReport={handleOpenReportModal}
+                      onBackToMap={() => setActiveTab('monitor')}
+                    />
+                  ) : (
+                    /* Workstation Empty State prompting user to launch analysis */
+                    <div className="w-full h-full min-h-[450px] flex flex-col items-center justify-center p-8 text-center bg-[#070c18] border border-white/[0.05] rounded-2xl">
+                      <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4 shadow-lg shadow-emerald-500/15">
+                        <Activity className="w-8 h-8 animate-pulse" />
+                      </div>
+                      <h2 className="text-lg font-bold text-white">
+                        Copernicus Sentinel-2 Spektral Analiz Konsolu
+                      </h2>
+                      <p className="text-xs text-slate-400 max-w-md mt-1 mb-6 leading-relaxed">
+                        <strong className="text-emerald-400">{selectedParcel ? selectedParcel.name : 'Emiralem Zeytinliği'}</strong> parseli için 10m L2A yüzey yansımaları, 14 aşamalı spektral boru hattı ve toprak organik karbon (SOC) stok analizini başlatın.
+                      </p>
+                      <button
+                        onClick={handleStartAnalysis}
+                        className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 text-xs font-black shadow-lg shadow-emerald-500/25 transition active:scale-95"
+                      >
+                        14 Aşamalı Spektral Boru Hattını Başlat
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
-          {/* TAB 4: PRACTICES & FIELD VERIFICATION */}
-          {activeTab === 'practices' && (
-            <div className="w-full h-full">
-              <PracticesView
-                parcels={INITIAL_PARCELS}
-                selectedParcel={selectedParcel}
-                onSelectParcel={(p) => setSelectedParcel(p)}
-                onOpenReport={(p) => {
-                  setSelectedParcel(p);
-                  handleOpenReportModal();
-                }}
-              />
-            </div>
-          )}
+              {/* TAB 3: REPORTS (Corporate MRV Archive) */}
+              {activeTab === 'reports' && (
+                <div className="w-full h-full p-4 sm:p-6 overflow-y-auto bg-[#060a14]">
+                  <ReportsArchiveView
+                    parcels={INITIAL_PARCELS}
+                    onOpenReport={(p) => {
+                      setSelectedParcel(p);
+                      handleOpenReportModal();
+                    }}
+                  />
+                </div>
+              )}
 
-          {/* TAB 5: REPORTS (MRV Archives & Downloads) */}
-          {activeTab === 'reports' && (
-            <div className="w-full h-full p-4 sm:p-8 overflow-y-auto bg-[#080c14]">
-              <div className="max-w-6xl mx-auto">
-                <ReportsArchiveView
-                  parcels={INITIAL_PARCELS}
-                  onOpenReport={(p) => {
-                    setSelectedParcel(p);
-                    handleOpenReportModal();
-                  }}
-                />
-              </div>
-            </div>
-          )}
+              {/* TAB 4: PRACTICES & FIELD VERIFICATION */}
+              {activeTab === 'practices' && (
+                <div className="w-full h-full overflow-y-auto p-4 sm:p-6 bg-[#060a14]">
+                  <PracticesView
+                    parcels={INITIAL_PARCELS}
+                    selectedParcel={selectedParcel}
+                    onSelectParcel={(p) => setSelectedParcel(p)}
+                    onOpenReport={(p) => {
+                      setSelectedParcel(p);
+                      handleOpenReportModal();
+                    }}
+                  />
+                </div>
+              )}
 
-          {/* TAB 6: METHODOLOGY (Scientific Documentation) */}
-          {activeTab === 'methodology' && (
-            <div className="w-full h-full">
-              <MethodologyView />
-            </div>
-          )}
+              {/* TAB 5: AI COPILOT & AGRONOMIC ASSISTANT (Gemini 3.8) */}
+              {activeTab === 'assistant' && (
+                <div className="w-full h-full overflow-hidden bg-[#060a14]">
+                  <AICopilotView
+                    parcels={INITIAL_PARCELS}
+                    selectedParcel={selectedParcel}
+                    onSelectParcel={(p) => setSelectedParcel(p)}
+                    onOpenReport={(p) => {
+                      setSelectedParcel(p);
+                      handleOpenReportModal();
+                    }}
+                    onStartAnalysis={handleStartAnalysis}
+                  />
+                </div>
+              )}
+
+              {/* TAB 6: METHODOLOGY & SCIENTIFIC FORMULAS */}
+              {activeTab === 'methodology' && (
+                <div className="w-full h-full overflow-y-auto p-4 sm:p-6 bg-[#060a14]">
+                  <MethodologyView />
+                </div>
+              )}
+            </main>
+          </div>
+
+          {/* 4. Windows Status Bar (GIS Coordinates, Sensor Status, Projection, Clock, EXE link) */}
+          <WindowsStatusBar
+            selectedParcel={selectedParcel}
+            onOpenExeModal={() => setExeModalOpen(true)}
+            isDemoMode={isDemoMode}
+          />
         </div>
-      </div>
+      )}
+
+      {/* Windows 11 Setup Wizard Modal (.EXE Download & Installer) */}
+      <WindowsExeInstallerModal
+        isOpen={exeModalOpen}
+        onClose={() => setExeModalOpen(false)}
+      />
+
+      {/* Windows Close Confirmation Dialog */}
+      <WindowsCloseDialog
+        isOpen={closeDialogOpen}
+        onCancel={() => setCloseDialogOpen(false)}
+        onMinimizeToTray={() => {
+          setCloseDialogOpen(false);
+          handleMinimize();
+        }}
+        onConfirmExit={handleConfirmExit}
+      />
 
       {/* 19-Section Corporate MRV Report Modal */}
       {mrvModalOpen && (

@@ -1,6 +1,6 @@
 {
-  "name": "TerraSat AI",
-  "description": "Kurumsal tarımsal sürdürülebilirlik izleme ve MRV (Ölçüm, Raporlama, Doğrulama) platformu. Menemen / İzmir tarım parsellerinde uydu göstergeleri ve yapay zekâ destekli analiz.",
-  "requestFramePermissions": [],
+  "name": "TerraSat AI Mobile",
+  "description": "Windows masaüstü uygulaması (.EXE). Kurumsal tarımsal sürdürülebilirlik izleme, Sentinel-2 multispektral uydu analizi, saha denetimi ve ISO 14064-2 MRV masaüstü çalışma istasyonu.",
+  "requestFramePermissions": ["camera", "geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -13,10 +13,10 @@ import { HistoricalObservation } from '../../types';
 
 interface TrendChartProps {
   data: HistoricalObservation[];
-  cropName: string;
+  cropName?: string;
 }
 
-export const TrendChart: React.FC<TrendChartProps> = ({ data, cropName }) => {
+export const TrendChart: React.FC<TrendChartProps> = ({ data, cropName = 'Tarımsal Ürün' }) => {
   const [activeMetric, setActiveMetric] = useState<'all' | 'ndvi' | 'ndwi' | 'moisture' | 'score'>('all');
   const [timeRange, setTimeRange] = useState<'30d' | '3m' | '6m' | '1y'>('6m');
 

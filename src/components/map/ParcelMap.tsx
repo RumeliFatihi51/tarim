@@ -82,7 +82,24 @@ export const ParcelMap: React.FC<ParcelMapProps> = ({
 
     mapInstanceRef.current = map;
 
+    // Immediately schedule an invalidateSize to ensure tiles render if container was animating/resizing
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 150);
+
+    // Observe container size changes (e.g. window resize, sidebar toggle, iframe dimension change)
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        map.invalidateSize();
+      });
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
     return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       map.remove();
       mapInstanceRef.current = null;
     };

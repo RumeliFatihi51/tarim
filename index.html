@@ -1,21 +1,24 @@
 <!doctype html>
-<html lang="tr" class="dark">
+<html lang="tr" class="dark w-full h-full">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TerraSat AI — Tarımsal Sürdürülebilirlik İzleme ve MRV Platformu</title>
-    <meta name="description" content="TerraSat AI, geniş tedarik zincirlerindeki tarım parsellerini uydu verileri, çevresel göstergeler ve yapay zekâ analizleriyle izleyen kurumsal MRV platformudur." />
-    <meta property="og:title" content="TerraSat AI — Tarımsal Sürdürülebilirlik İzleme ve MRV Platformu" />
-    <meta property="og:description" content="TerraSat AI, geniş tedarik zincirlerindeki tarım parsellerini uydu verileri, çevresel göstergeler ve yapay zekâ analizleriyle izleyen kurumsal MRV platformudur." />
-    <meta property="og:type" content="website" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>TerraSat AI Mobile</title>
+    <meta name="description" content="Windows masaüstü uygulaması (.EXE). Kurumsal tarımsal sürdürülebilirlik izleme, Sentinel-2 multispektral uydu analizi, saha denetimi ve ISO 14064-2 MRV masaüstü çalışma istasyonu." />
+    <meta property="og:title" content="TerraSat AI Mobile" />
+    <meta property="og:description" content="Windows masaüstü uygulaması (.EXE). Kurumsal tarımsal sürdürülebilirlik izleme, Sentinel-2 multispektral uydu analizi, saha denetimi ve ISO 14064-2 MRV masaüstü çalışma istasyonu." />
+    <meta property="og:type" content="application" />
     <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Windows Desktop Shell Theme -->
+    <meta name="theme-color" content="#0a0f1d" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   </head>
-  <body class="bg-[#0b0f17] text-slate-100 font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
-    <div id="root"></div>
+  <body class="w-full h-full m-0 p-0 bg-[#05080f] text-slate-100 font-sans antialiased selection:bg-emerald-500/30 selection:text-emerald-200 overflow-hidden touch-manipulation select-none">
+    <div id="root" class="w-full h-full"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Satellite, 
   MapPin, 
@@ -12,7 +12,9 @@ import {
   HelpCircle,
   Crop,
   ShieldCheck,
-  Compass
+  Compass,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { Parcel } from '../../types';
 
@@ -37,9 +39,11 @@ export const SelectedParcelCard: React.FC<SelectedParcelCardProps> = ({
   isDemoMode,
   onSelectQuickPreset,
 }) => {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   if (!parcel) {
     return (
-      <div className="w-80 lg:w-96 bg-[#080c14]/95 border border-slate-800/90 rounded-2xl p-5 text-slate-300 shadow-2xl backdrop-blur-md flex flex-col justify-between">
+      <div className="w-72 sm:w-80 lg:w-96 bg-[#080c14]/95 border border-slate-800/90 rounded-2xl p-4 sm:p-5 text-slate-300 shadow-2xl backdrop-blur-md flex flex-col justify-between">
         <div className="space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
@@ -122,8 +126,42 @@ export const SelectedParcelCard: React.FC<SelectedParcelCardProps> = ({
     ? parcel.polygon[0][1].toFixed(4)
     : '27.1180';
 
+  if (isCollapsed) {
+    return (
+      <div className="w-full max-w-lg bg-[#080c14]/95 border border-slate-800/90 rounded-2xl p-3 text-slate-300 shadow-2xl backdrop-blur-md flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+            {parcel.number || '#PARCEL'}
+          </span>
+          <div className="min-w-0">
+            <h4 className="text-xs font-bold text-white truncate">{parcel.name}</h4>
+            <span className="text-[10px] text-slate-400 font-mono">{parcel.areaHa} ha • NDVI: {parcel.ndvi}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={onStartAnalysis}
+            disabled={isAnalyzing}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition flex items-center gap-1.5 shadow-md shadow-emerald-500/20"
+          >
+            <Play className="w-3 h-3 fill-current" />
+            <span>Analiz Et</span>
+          </button>
+          <button
+            onClick={() => setIsCollapsed(false)}
+            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+            title="Ayrıntıları Göster"
+          >
+            <ChevronUp className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-80 lg:w-96 bg-[#080c14]/95 border border-slate-800/90 rounded-2xl p-5 text-slate-300 shadow-2xl backdrop-blur-md flex flex-col justify-between max-h-[85vh] overflow-y-auto">
+    <div className="w-72 sm:w-80 lg:w-96 bg-[#080c14]/95 border border-slate-800/90 rounded-2xl p-4 sm:p-5 text-slate-300 shadow-2xl backdrop-blur-md flex flex-col justify-between max-h-[85vh] overflow-y-auto">
       <div className="space-y-4">
         {/* Header Badge & Title */}
         <div className="flex items-start justify-between gap-2 pb-3 border-b border-slate-800">
@@ -142,10 +180,17 @@ export const SelectedParcelCard: React.FC<SelectedParcelCardProps> = ({
             </h3>
           </div>
 
-          <div className="text-right">
+          <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-emerald-400 font-mono">
               {parcel.areaHa} ha
             </span>
+            <button
+              onClick={() => setIsCollapsed(true)}
+              className="p-1 rounded-md hover:bg-white/10 text-slate-400 hover:text-white transition"
+              title="Paneli Küçült"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
           </div>
         </div>
 

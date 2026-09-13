@@ -13,6 +13,7 @@ import { defaultJobManager } from './server/jobs/jobManager';
 import { defaultAssistantService } from './server/ai/assistantService';
 import { defaultWeatherService } from './server/weather/weatherService';
 import { defaultPracticeEngine } from './server/practices/practiceEngine';
+import { WINDOWS_APP_INFO, generateWindowsExeBuffer, generatePortableWindowsZipBuffer } from './server/desktop/exeService';
 import { INITIAL_PARCELS } from './src/data/parcels';
 
 dotenv.config();
@@ -409,6 +410,40 @@ app.get('/api/export/csv/:parcelId', (req, res) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="${parcel.id}_timeseries.csv"`);
   res.send(csvContent);
+});
+
+// Windows Desktop App Info & EXE Packaging Endpoints
+app.get('/api/desktop/info', (req, res) => {
+  res.json({
+    status: 'ok',
+    appInfo: WINDOWS_APP_INFO,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/api/desktop/download-exe', (req, res) => {
+  try {
+    const exeBuffer = generateWindowsExeBuffer();
+    res.setHeader('Content-Type', 'application/x-msdownload');
+    res.setHeader('Content-Disposition', 'attachment; filename="TerraSat_AI_Workstation_Setup_v3.0.0.exe"');
+    res.setHeader('Content-Length', exeBuffer.length);
+    res.send(exeBuffer);
+  } catch (err: any) {
+    console.error('[API] Windows EXE generation error:', err);
+    res.status(500).json({ error: 'Windows yükleyici (.exe) dosyası oluşturulurken hata meydana geldi.' });
+  }
+});
+
+app.get('/api/desktop/download-portable', (req, res) => {
+  try {
+    const zipBuffer = generatePortableWindowsZipBuffer();
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="TerraSat_Windows_Portable_v3.0.0.zip"');
+    res.setHeader('Content-Length', zipBuffer.length);
+    res.send(zipBuffer);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Taşınabilir Windows paketi oluşturulamadı.' });
+  }
 });
 
 // Start async analysis job endpoint
