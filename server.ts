@@ -309,6 +309,12 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 });
 
+// Alias for assistant chat
+app.post('/api/assistant/chat', (req, res, next) => {
+  req.url = '/api/ai/chat';
+  (app as any).handle(req, res, next);
+});
+
 // Parcels list endpoint
 app.get('/api/parcels', (req, res) => {
   res.json({

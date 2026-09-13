@@ -74,20 +74,39 @@ Kurallar:
   "recommendedAction": "Önerilen saha veya denetim adımı"
 }`;
 
-        const response = await this.ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: userPrompt }],
+        let response;
+        try {
+          response = await this.ai.models.generateContent({
+            model: 'gemini-3.8-flash',
+            contents: [
+              {
+                role: 'user',
+                parts: [{ text: userPrompt }],
+              },
+            ],
+            config: {
+              systemInstruction,
+              temperature: 0.2,
+              responseMimeType: 'application/json',
             },
-          ],
-          config: {
-            systemInstruction,
-            temperature: 0.2,
-            responseMimeType: 'application/json',
-          },
-        });
+          });
+        } catch (callErr: any) {
+          console.warn('[ASSISTANT] gemini-3.8-flash failed, attempting gemini-3.6-flash:', callErr.message);
+          response = await this.ai.models.generateContent({
+            model: 'gemini-3.6-flash',
+            contents: [
+              {
+                role: 'user',
+                parts: [{ text: userPrompt }],
+              },
+            ],
+            config: {
+              systemInstruction,
+              temperature: 0.2,
+              responseMimeType: 'application/json',
+            },
+          });
+        }
 
         const rawText = response.text || '';
         const parsed = JSON.parse(rawText);
