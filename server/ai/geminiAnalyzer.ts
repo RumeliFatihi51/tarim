@@ -28,17 +28,15 @@ export interface AIAnalysisOutput {
 }
 
 export class GeminiAnalyzer {
+  private circuitBreakerUntil = 0;
+
   private getClient(): GoogleGenAI | null {
+    if (Date.now() < this.circuitBreakerUntil) {
+      return null;
+    }
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return null;
-    return new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'TerraSat-AI-MRV',
-        },
-      },
-    });
+    return new GoogleGenAI({ apiKey });
   }
 
   /**
@@ -227,14 +225,20 @@ export class GeminiAnalyzer {
         historicalObservations: timeSeries,
       };
 
-      const response = await client.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                text: `Sen kıdemli bir uzaktan algılama ve tarımsal MRV (Measurement, Reporting, Verification) analistisin.
+      let response: any;
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini API timeout after 15s')), 15000)
+      );
+
+      try {
+        const genCall = client.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: `Sen kıdemli bir uzaktan algılama ve tarımsal MRV (Measurement, Reporting, Verification) analistisin.
 Aşağıda verilen GERÇEK Sentinel-2 Level-2A optik uydu ölçümlerini ve piksel istatistiklerini değerlendir:
 
 ${JSON.stringify(payload, null, 2)}
@@ -243,73 +247,103 @@ ${JSON.stringify(payload, null, 2)}
 1. Kesinlikle yeni ölçüm uydurma veya sayıları değiştirme; verilen gerçek NDVI (${rasterResult.indices.ndvi.mean}), NDWI (${rasterResult.indices.ndwi.mean}), NDMI (${rasterResult.indices.ndmi.mean}) değerlerini yorumla.
 2. Bilimsel dürüstlük: Sentinel-2 uydusunun doğrudan toprak nemini veya toprak organik karbonunu ton olarak ölçemeyeceğini, bunların model/proxy göstergeler olduğunu ve fiziksel saha doğrulaması (TDR sensörü, laboratuvar toprak analizi) gerektiğini vurgula.
 3. Çıktı dili profesyonel, kurumsal ve akıcı Türkçe olmalıdır.`,
-              },
-            ],
-          },
-        ],
-        config: {
-          systemInstruction: 'TerraSat AI Kurumsal Tarımsal Çevre ve MRV Uzaktan Algılama Analisti.',
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              overallStatus: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              keyFindings: { type: Type.ARRAY, items: { type: Type.STRING } },
-              risks: {
-                type: Type.ARRAY,
-                items: {
+                },
+              ],
+            },
+          ],
+          config: {
+            systemInstruction: 'TerraSat AI Kurumsal Tarımsal Çevre ve MRV Uzaktan Algılama Analisti.',
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                overallStatus: { type: Type.STRING },
+                summary: { type: Type.STRING },
+                keyFindings: { type: Type.ARRAY, items: { type: Type.STRING } },
+                risks: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      title: { type: Type.STRING },
+                      severity: { type: Type.STRING, enum: ['low', 'medium', 'high'] },
+                      explanation: { type: Type.STRING },
+                      evidence: { type: Type.STRING },
+                    },
+                    required: ['title', 'severity', 'explanation', 'evidence'],
+                  },
+                },
+                positiveSignals: { type: Type.ARRAY, items: { type: Type.STRING } },
+                possibleDrivers: { type: Type.ARRAY, items: { type: Type.STRING } },
+                recommendedActions: { type: Type.ARRAY, items: { type: Type.STRING } },
+                verificationNeeded: { type: Type.ARRAY, items: { type: Type.STRING } },
+                mrvStatus: {
                   type: Type.OBJECT,
                   properties: {
-                    title: { type: Type.STRING },
-                    severity: { type: Type.STRING, enum: ['low', 'medium', 'high'] },
-                    explanation: { type: Type.STRING },
-                    evidence: { type: Type.STRING },
+                    measurement: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    reporting: { type: Type.ARRAY, items: { type: Type.STRING } },
+                    verification: { type: Type.ARRAY, items: { type: Type.STRING } },
                   },
-                  required: ['title', 'severity', 'explanation', 'evidence'],
+                  required: ['measurement', 'reporting', 'verification'],
                 },
+                confidenceLevel: { type: Type.STRING, enum: ['High', 'Medium', 'Low'] },
+                confidenceJustification: { type: Type.STRING },
+                limitations: { type: Type.ARRAY, items: { type: Type.STRING } },
               },
-              positiveSignals: { type: Type.ARRAY, items: { type: Type.STRING } },
-              possibleDrivers: { type: Type.ARRAY, items: { type: Type.STRING } },
-              recommendedActions: { type: Type.ARRAY, items: { type: Type.STRING } },
-              verificationNeeded: { type: Type.ARRAY, items: { type: Type.STRING } },
-              mrvStatus: {
-                type: Type.OBJECT,
-                properties: {
-                  measurement: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  reporting: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  verification: { type: Type.ARRAY, items: { type: Type.STRING } },
-                },
-                required: ['measurement', 'reporting', 'verification'],
-              },
-              confidenceLevel: { type: Type.STRING, enum: ['High', 'Medium', 'Low'] },
-              confidenceJustification: { type: Type.STRING },
-              limitations: { type: Type.ARRAY, items: { type: Type.STRING } },
+              required: [
+                'overallStatus',
+                'summary',
+                'keyFindings',
+                'risks',
+                'positiveSignals',
+                'possibleDrivers',
+                'recommendedActions',
+                'verificationNeeded',
+                'mrvStatus',
+                'confidenceLevel',
+                'confidenceJustification',
+                'limitations',
+              ],
             },
-            required: [
-              'overallStatus',
-              'summary',
-              'keyFindings',
-              'risks',
-              'positiveSignals',
-              'possibleDrivers',
-              'recommendedActions',
-              'verificationNeeded',
-              'mrvStatus',
-              'confidenceLevel',
-              'confidenceJustification',
-              'limitations',
-            ],
           },
-        },
-      });
+        });
+        response = await Promise.race([genCall, timeoutPromise]);
+      } catch (err36: any) {
+        console.warn('[AI] Primary structured call failed, retrying with fallback:', err36.message);
+        const fallbackCall = client.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: `Sen kıdemli bir uzaktan algılama ve tarımsal MRV analistisin. Verilen Sentinel-2 L2A ölçümlerini değerlendir ve JSON formatında döndür:
+${JSON.stringify(payload, null, 2)}`,
+                },
+              ],
+            },
+          ],
+          config: {
+            systemInstruction: 'TerraSat AI Kurumsal Tarımsal Çevre ve MRV Uzaktan Algılama Analisti. Cevapları sadece geçerli JSON olarak ver.',
+            responseMimeType: 'application/json',
+          },
+        });
+        response = await Promise.race([fallbackCall, timeoutPromise]);
+      }
 
       const parsed = JSON.parse(response.text || '{}');
       parsed.generatedAt = fallback.generatedAt;
-      parsed.modelUsed = 'Gemini 3.8 Flash & ESA Sentinel-2 L2A';
+      parsed.modelUsed = 'Gemini 3.6 Flash & ESA Sentinel-2 L2A';
       return parsed as AIAnalysisOutput;
     } catch (err: any) {
-      console.warn('[AI] Gemini evaluation failed, using domain expert fallback:', err.message);
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota') || errMsg.includes('429')) {
+        // Cooldown for 5 minutes to prevent spamming rate-limited endpoint
+        this.circuitBreakerUntil = Date.now() + 5 * 60 * 1000;
+        console.warn('[AI] Gemini quota limit reached. Activating 5-minute domain expert circuit breaker.');
+      } else {
+        console.warn('[AI] Gemini evaluation failed, using domain expert fallback:', errMsg);
+      }
       return fallback;
     }
   }

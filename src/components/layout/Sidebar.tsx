@@ -9,7 +9,9 @@ import {
   X,
   ShieldCheck,
   Cpu,
-  ChevronRight
+  ChevronRight,
+  Bot,
+  CheckSquare
 } from 'lucide-react';
 import { ActiveTab } from '../../types';
 
@@ -42,6 +44,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       sublabel: 'Canlı Pipeline & Göstergeler',
       icon: Activity,
       badge: 'Gemini AI',
+    },
+    {
+      id: 'assistant' as ActiveTab,
+      label: 'AI Asistan',
+      sublabel: 'Spektral & MRV Copilot',
+      icon: Bot,
+      badge: 'L2A',
+    },
+    {
+      id: 'practices' as ActiveTab,
+      label: 'Pratikler & Saha',
+      sublabel: 'Sulama, Anız, Denetim',
+      icon: CheckSquare,
+      badge: 'Doğrulama',
     },
     {
       id: 'reports' as ActiveTab,

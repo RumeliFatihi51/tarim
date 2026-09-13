@@ -7,6 +7,8 @@ import { LiveAnalysisPipeline } from './components/pipeline/LiveAnalysisPipeline
 import { AnalysisResultView } from './components/pipeline/AnalysisResultView';
 import { ReportsArchiveView } from './components/reports/ReportsArchiveView';
 import { MethodologyView } from './components/methodology/MethodologyView';
+import { AICopilotView } from './components/ai/AICopilotView';
+import { PracticesView } from './components/practices/PracticesView';
 import { MRVReportModal } from './components/reports/MRVReportModal';
 import { INITIAL_PARCELS } from './data/parcels';
 import { Parcel, ActiveTab, FullAnalysisPayload } from './types';
@@ -212,7 +214,38 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 3: REPORTS (MRV Archives & Downloads) */}
+          {/* TAB 3: AI ASSISTANT */}
+          {activeTab === 'assistant' && (
+            <div className="w-full h-full">
+              <AICopilotView
+                parcels={INITIAL_PARCELS}
+                selectedParcel={selectedParcel}
+                onSelectParcel={(p) => setSelectedParcel(p)}
+                onOpenReport={(p) => {
+                  setSelectedParcel(p);
+                  handleOpenReportModal();
+                }}
+                onStartAnalysis={handleStartAnalysis}
+              />
+            </div>
+          )}
+
+          {/* TAB 4: PRACTICES & FIELD VERIFICATION */}
+          {activeTab === 'practices' && (
+            <div className="w-full h-full">
+              <PracticesView
+                parcels={INITIAL_PARCELS}
+                selectedParcel={selectedParcel}
+                onSelectParcel={(p) => setSelectedParcel(p)}
+                onOpenReport={(p) => {
+                  setSelectedParcel(p);
+                  handleOpenReportModal();
+                }}
+              />
+            </div>
+          )}
+
+          {/* TAB 5: REPORTS (MRV Archives & Downloads) */}
           {activeTab === 'reports' && (
             <div className="w-full h-full p-4 sm:p-8 overflow-y-auto bg-[#080c14]">
               <div className="max-w-6xl mx-auto">
@@ -227,7 +260,7 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 4: METHODOLOGY (Scientific Documentation) */}
+          {/* TAB 6: METHODOLOGY (Scientific Documentation) */}
           {activeTab === 'methodology' && (
             <div className="w-full h-full">
               <MethodologyView />

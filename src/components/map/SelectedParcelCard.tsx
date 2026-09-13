@@ -115,10 +115,10 @@ export const SelectedParcelCard: React.FC<SelectedParcelCardProps> = ({
   }
 
   // Calculate center coordinate for display
-  const centerLat = parcel.polygon && parcel.polygon.length > 0 
+  const centerLat = parcel.polygon && parcel.polygon.length > 0 && typeof parcel.polygon[0]?.[0] === 'number' && !isNaN(parcel.polygon[0][0])
     ? parcel.polygon[0][0].toFixed(4)
     : '38.6420';
-  const centerLng = parcel.polygon && parcel.polygon.length > 0
+  const centerLng = parcel.polygon && parcel.polygon.length > 0 && typeof parcel.polygon[0]?.[1] === 'number' && !isNaN(parcel.polygon[0][1])
     ? parcel.polygon[0][1].toFixed(4)
     : '27.1180';
 

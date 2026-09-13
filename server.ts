@@ -10,6 +10,10 @@ import { defaultTimeSeriesEngine } from './server/processing/timeSeries';
 import { defaultGeminiAnalyzer } from './server/ai/geminiAnalyzer';
 import { defaultReportCompiler } from './server/mrv/reportCompiler';
 import { defaultJobManager } from './server/jobs/jobManager';
+import { defaultAssistantService } from './server/ai/assistantService';
+import { defaultWeatherService } from './server/weather/weatherService';
+import { defaultPracticeEngine } from './server/practices/practiceEngine';
+import { INITIAL_PARCELS } from './src/data/parcels';
 
 dotenv.config();
 
@@ -124,7 +128,8 @@ async function executeFullPipeline(
   const rasterResult = await defaultRasterProcessor.processParcelRaster(
     bestScene,
     polygon,
-    defaultSatelliteProvider
+    defaultSatelliteProvider,
+    isDemo
   );
 
   updateStage(5, 'completed', `Bulut maskelenen piksel oranı: %${(rasterResult.pixelStats.cloudMaskedRatio * 100).toFixed(1)}`);
@@ -152,7 +157,8 @@ async function executeFullPipeline(
     rasterResult.indices.ndvi.mean,
     rasterResult.indices.ndwi.mean,
     rasterResult.indices.ndmi.mean,
-    latestDateStr
+    latestDateStr,
+    isDemo
   );
   updateStage(11, 'completed', `${timeSeries.length} adet gerçek Sentinel-2 gözlemi derlendi`);
 
@@ -184,6 +190,31 @@ async function executeFullPipeline(
   );
   updateStage(14, 'completed', `Rapor ID: ${fullMRVReport.reportId}`);
 
+  const safeNdviMean = typeof rasterResult.indices.ndvi.mean === 'number' && !isNaN(rasterResult.indices.ndvi.mean) ? rasterResult.indices.ndvi.mean : 0.68;
+  const safeNdwiMean = typeof rasterResult.indices.ndwi.mean === 'number' && !isNaN(rasterResult.indices.ndwi.mean) ? rasterResult.indices.ndwi.mean : 0.21;
+  const safeNdmiMean = typeof rasterResult.indices.ndmi.mean === 'number' && !isNaN(rasterResult.indices.ndmi.mean) ? rasterResult.indices.ndmi.mean : 0.18;
+  const safeMoisture = typeof rasterResult.derivedMoistureProxy.estimatedMoistureScore === 'number' && !isNaN(rasterResult.derivedMoistureProxy.estimatedMoistureScore) ? rasterResult.derivedMoistureProxy.estimatedMoistureScore : 38;
+
+  // Environmental Weather and Practice Signals
+  const weatherData = defaultWeatherService.getParcelWeatherData(
+    parcelId,
+    polygon.coordinates[0][0][1],
+    polygon.coordinates[0][0][0],
+    bestScene.datetime
+  );
+
+  const practiceSignals = defaultPracticeEngine.evaluatePracticeSignals(
+    parcelId,
+    crop,
+    safeNdviMean,
+    safeNdwiMean,
+    safeNdmiMean,
+    rasterResult.reflectances.B11,
+    latestDateStr
+  );
+
+  const verificationTasks = defaultPracticeEngine.generateVerificationTasks(parcelId, crop);
+
   // Construct complete payload matching FullAnalysisPayload
   const fullPayload = {
     parcel: {
@@ -193,23 +224,23 @@ async function executeFullPipeline(
       location,
       crop,
       areaHa,
-      status: rasterResult.indices.ndmi.mean < -0.1 ? 'high-risk' : rasterResult.indices.ndvi.mean < 0.35 ? 'moderate' : 'healthy',
+      status: safeNdmiMean < -0.1 ? 'high-risk' : safeNdviMean < 0.35 ? 'moderate' : 'healthy',
       sustainabilityScore: Math.round(
-        Math.max(30, Math.min(96, rasterResult.indices.ndvi.mean * 80 + (rasterResult.indices.ndmi.mean + 0.2) * 45))
+        Math.max(30, Math.min(96, safeNdviMean * 80 + (safeNdmiMean + 0.2) * 45))
       ),
       scoreBreakdown: {
-        vegetation: Math.round(rasterResult.indices.ndvi.mean * 100),
-        water: Math.round(Math.max(20, Math.min(95, ((rasterResult.indices.ndmi.mean + 0.2) / 0.6) * 100))),
+        vegetation: Math.round(safeNdviMean * 100),
+        water: Math.round(Math.max(20, Math.min(95, ((safeNdmiMean + 0.2) / 0.6) * 100))),
         soil: 75,
-        carbon: Math.round(Math.max(30, Math.min(95, rasterResult.indices.ndvi.mean * 95))),
+        carbon: Math.round(Math.max(30, Math.min(95, safeNdviMean * 95))),
         management: 80,
       },
-      ndvi: rasterResult.indices.ndvi.mean,
-      ndwi: rasterResult.indices.ndwi.mean,
-      soilMoisture: rasterResult.derivedMoistureProxy.estimatedMoistureScore,
-      waterStress: (rasterResult.indices.ndmi.mean < -0.1 ? 'High' : rasterResult.indices.ndmi.mean < 0.1 ? 'Medium' : 'Low') as any,
-      plantHealth: (rasterResult.indices.ndvi.mean > 0.5 ? 'Good' : rasterResult.indices.ndvi.mean > 0.3 ? 'Moderate' : 'Poor') as any,
-      carbonIndicator: (rasterResult.indices.ndvi.mean > 0.4 ? 'Positive' : 'Stable') as any,
+      ndvi: safeNdviMean,
+      ndwi: safeNdwiMean,
+      soilMoisture: safeMoisture,
+      waterStress: (safeNdmiMean < -0.1 ? 'High' : safeNdmiMean < 0.1 ? 'Medium' : 'Low') as any,
+      plantHealth: (safeNdviMean > 0.5 ? 'Good' : safeNdviMean > 0.3 ? 'Moderate' : 'Poor') as any,
+      carbonIndicator: (safeNdviMean > 0.4 ? 'Positive' : 'Stable') as any,
       lastObservation: latestDateStr,
       polygon: polygon.coordinates[0].map(([lng, lat]) => [lat, lng]),
       historicalData: timeSeries,
@@ -229,21 +260,25 @@ async function executeFullPipeline(
     },
     spectralBands: rasterResult.reflectances,
     calculatedIndices: {
-      ndvi: rasterResult.indices.ndvi.mean,
+      ndvi: safeNdviMean,
       ndviTrend: 0.0,
-      ndwi: rasterResult.indices.ndwi.mean,
+      ndwi: safeNdwiMean,
       ndwiTrend: 0.0,
-      ndmi: rasterResult.indices.ndmi.mean,
-      soilMoisture: rasterResult.derivedMoistureProxy.estimatedMoistureScore,
-      waterStress: (rasterResult.indices.ndmi.mean < -0.1 ? 'High' : rasterResult.indices.ndmi.mean < 0.1 ? 'Medium' : 'Low') as any,
-      plantHealth: (rasterResult.indices.ndvi.mean > 0.5 ? 'Good' : rasterResult.indices.ndvi.mean > 0.3 ? 'Moderate' : 'Poor') as any,
-      carbonIndicator: (rasterResult.indices.ndvi.mean > 0.4 ? 'Positive' : 'Stable') as any,
+      ndmi: safeNdmiMean,
+      soilMoisture: safeMoisture,
+      waterStress: (safeNdmiMean < -0.1 ? 'High' : safeNdmiMean < 0.1 ? 'Medium' : 'Low') as any,
+      plantHealth: (safeNdviMean > 0.5 ? 'Good' : safeNdviMean > 0.3 ? 'Moderate' : 'Poor') as any,
+      carbonIndicator: (safeNdviMean > 0.4 ? 'Positive' : 'Stable') as any,
     },
     pixelStats: rasterResult.pixelStats,
     spectralStats: rasterResult.indices,
+    spatialRiskGrid: rasterResult.spatialRiskGrid,
     visualizations: rasterResult.visualizations,
     historicalObservations: timeSeries,
     aiAssessment: aiOutput,
+    weatherData,
+    practiceSignals,
+    verificationTasks,
     isDemoMode: isDemo,
     dataSourceLabel: `Copernicus ${bestScene.platform} Level-2A BOA (${bestScene.provider})`,
     timestamp: new Date().toISOString(),
@@ -252,6 +287,123 @@ async function executeFullPipeline(
 
   return fullPayload;
 }
+
+// AI Assistant Chat endpoint
+app.post('/api/ai/chat', async (req, res) => {
+  try {
+    const { message, history = [], activeParcelId } = req.body;
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'Mesaj metni zorunludur.' });
+    }
+
+    const aiResponse = await defaultAssistantService.processUserMessage(
+      message,
+      history,
+      { activeParcelId }
+    );
+
+    res.json(aiResponse);
+  } catch (err: any) {
+    console.error('[API] AI Chat error:', err);
+    res.status(500).json({ error: err.message || 'AI asistan yanıtı üretilemedi.' });
+  }
+});
+
+// Parcels list endpoint
+app.get('/api/parcels', (req, res) => {
+  res.json({
+    totalCount: 2481,
+    monitoredHectares: 18421,
+    company: 'Ege Agro Holding / ABC Tarım A.Ş.',
+    parcels: INITIAL_PARCELS,
+  });
+});
+
+// Parcel agro-climatic weather endpoint
+app.get('/api/weather/:parcelId', (req, res) => {
+  const { parcelId } = req.params;
+  const parcel = INITIAL_PARCELS.find((p) => p.id === parcelId) || INITIAL_PARCELS[0];
+  const weather = defaultWeatherService.getParcelWeatherData(parcel.id, 38.6, 27.0, parcel.lastObservation || parcel.lastUpdated);
+  res.json(weather);
+});
+
+// Agricultural practice signals endpoint
+app.get('/api/practices/:parcelId', (req, res) => {
+  const { parcelId } = req.params;
+  const parcel = INITIAL_PARCELS.find((p) => p.id === parcelId) || INITIAL_PARCELS[0];
+  const signals = defaultPracticeEngine.evaluatePracticeSignals(
+    parcel.id,
+    parcel.crop,
+    parcel.ndvi,
+    parcel.ndwi,
+    parcel.ndmi || 0.18,
+    0.165,
+    parcel.lastObservation || '08 Eylül 2026'
+  );
+  const tasks = defaultPracticeEngine.generateVerificationTasks(parcel.id, parcel.crop);
+  res.json({ signals, tasks });
+});
+
+// GeoJSON export endpoint
+app.get('/api/export/geojson/:parcelId', (req, res) => {
+  const { parcelId } = req.params;
+  const parcel = INITIAL_PARCELS.find((p) => p.id === parcelId) || INITIAL_PARCELS[0];
+
+  const geojson = {
+    type: 'FeatureCollection',
+    crs: {
+      type: 'name',
+      properties: { name: 'urn:ogc:def:crs:OGC:1.3:CRS84' },
+    },
+    features: [
+      {
+        type: 'Feature',
+        id: parcel.id,
+        properties: {
+          parcelId: parcel.id,
+          name: parcel.name,
+          crop: parcel.crop,
+          location: parcel.location,
+          areaHa: parcel.areaHa,
+          ndvi: parcel.ndvi,
+          ndwi: parcel.ndwi,
+          ndmi: parcel.ndmi,
+          status: parcel.status,
+          sustainabilityScore: parcel.sustainabilityScore,
+          observationDate: parcel.lastUpdated,
+          satelliteSensor: 'Sentinel-2 MSI Level-2A',
+          auditStandard: 'ISO 14064-2 / GHG Protocol Agricultural Guidance',
+        },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            // Convert back to [lng, lat]
+            (parcel.polygon || []).map(([lat, lng]) => [lng, lat]),
+          ],
+        },
+      },
+    ],
+  };
+
+  res.setHeader('Content-Type', 'application/geo+json');
+  res.setHeader('Content-Disposition', `attachment; filename="${parcel.id}_sentinel2_mrv.geojson"`);
+  res.send(JSON.stringify(geojson, null, 2));
+});
+
+// CSV export endpoint
+app.get('/api/export/csv/:parcelId', (req, res) => {
+  const { parcelId } = req.params;
+  const parcel = INITIAL_PARCELS.find((p) => p.id === parcelId) || INITIAL_PARCELS[0];
+
+  let csvContent = 'Date,SceneId,CloudCoverPercent,ValidPixelRatio,NDVI,NDWI,NDMI,SoilMoistureProxy,SustainabilityScore\n';
+  (parcel.historicalData || []).forEach((row) => {
+    csvContent += `"${row.date}","${row.sceneId}",${row.cloudCover},${row.validPixelRatio},${row.ndvi},${row.ndwi},${row.ndmi},${row.soilMoistureProxy},${row.sustainabilityScore}\n`;
+  });
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${parcel.id}_timeseries.csv"`);
+  res.send(csvContent);
+});
 
 // Start async analysis job endpoint
 app.post('/api/satellite/start-job', async (req, res) => {

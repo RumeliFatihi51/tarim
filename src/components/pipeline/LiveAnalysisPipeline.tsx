@@ -176,7 +176,7 @@ export const LiveAnalysisPipeline: React.FC<LiveAnalysisPipelineProps> = ({
           <div className="text-right font-mono">
             <span className="text-[11px] text-slate-500 block uppercase">İlerleme</span>
             <span className="text-base font-bold text-emerald-400">
-              %{Math.min(100, Math.round((currentStageNumber / stages.length) * 100))}
+              %{stages && stages.length > 0 ? Math.min(100, Math.max(0, Math.round(((currentStageNumber || 1) / stages.length) * 100))) : 0}
             </span>
           </div>
           <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center">
@@ -347,7 +347,9 @@ export const LiveAnalysisPipeline: React.FC<LiveAnalysisPipelineProps> = ({
 
               {/* Coordinates Badge */}
               <div className="absolute bottom-3 left-3 bg-slate-950/90 backdrop-blur-md px-2.5 py-1 rounded-lg text-[10px] font-mono text-slate-300 border border-slate-800">
-                {parcel.polygon[0]?.[0].toFixed(4)}°K, {parcel.polygon[0]?.[1].toFixed(4)}°D
+                {parcel.polygon && parcel.polygon[0] && typeof parcel.polygon[0][0] === 'number' && typeof parcel.polygon[0][1] === 'number'
+                  ? `${parcel.polygon[0][0].toFixed(4)}°K, ${parcel.polygon[0][1].toFixed(4)}°D`
+                  : '38.6420°K, 27.1180°D'}
               </div>
 
               {/* Tile / Scene Badge */}

@@ -59,6 +59,7 @@ export interface HistoricalObservation {
   ndwi: number;
   ndmi?: number;
   soilMoisture: number;
+  soilMoistureProxy?: number;
   sustainabilityScore: number;
   cloudCover?: number;
   sceneId?: string;
@@ -91,11 +92,13 @@ export interface Parcel {
   };
   ndvi: number;
   ndwi: number;
+  ndmi?: number;
   soilMoisture: number;
   waterStress: WaterStressLevel;
   plantHealth: PlantHealthLevel;
   carbonIndicator: CarbonIndicatorTrend;
   lastObservation: string;
+  lastUpdated?: string;
   polygon: [number, number][]; // [lat, lng] array
   historicalData: HistoricalObservation[];
   alerts?: ParcelAlert[];
@@ -171,6 +174,85 @@ export interface FullAnalysisPayload {
   dataSourceLabel: string;
   timestamp?: string;
   mrvReport?: any;
+  weatherData?: WeatherData;
+  practiceSignals?: PracticeSignal[];
+  verificationTasks?: FieldVerificationTask[];
+  spatialRiskGrid?: {
+    totalCells: number;
+    stressedCells: number;
+    watchCells: number;
+    healthyCells: number;
+    stressPercentage: number;
+  };
+}
+
+export interface WeatherData {
+  parcelId: string;
+  period: string;
+  temperatureC: number;
+  temperatureAnomalyC: number;
+  rainfallMm: number;
+  rainfallAnomalyPercent: number;
+  relativeHumidityPercent: number;
+  et0MmPerDay: number;
+  droughtRiskIndex: 'Low' | 'Moderate' | 'High' | 'Severe';
+  correlationSummary: string;
+}
+
+export interface PracticeSignal {
+  id: string;
+  type: 'IRRIGATION' | 'RESIDUE_BURNING' | 'TILLAGE' | 'CANOPY_CLEARING';
+  title: string;
+  status: 'NO_SIGNAL' | 'POSSIBLE_SIGNAL' | 'LIKELY_ACTIVE' | 'LIKELY_INACTIVE' | 'INSUFFICIENT_EVIDENCE';
+  evidenceLevel: 'DIRECT_SATELLITE' | 'MODEL_INFERRED' | 'FIELD_VERIFIED';
+  confidence: 'High' | 'Medium' | 'Low';
+  evidence: string[];
+  limitations: string;
+  verificationRequirement: string;
+  verificationStatus: 'PENDING' | 'SCHEDULED' | 'VERIFIED' | 'REJECTED';
+  observationDate: string;
+}
+
+export interface FieldVerificationTask {
+  id: string;
+  title: string;
+  category: 'irrigation' | 'soil' | 'canopy' | 'audit';
+  description: string;
+  priority: 'low' | 'medium' | 'high';
+  status: 'pending' | 'in_progress' | 'completed';
+  assignedTo?: string;
+  notes?: string;
+  photoCount?: number;
+  completedAt?: string;
+}
+
+export interface AIUIAction {
+  type: 'SHOW_PARCELS' | 'OPEN_PARCEL' | 'TRIGGER_ANALYSIS' | 'OPEN_MRV_REPORT' | 'HIGHLIGHT_STRESS';
+  parcelId?: string;
+  parcelIds?: string[];
+  filter?: string;
+  label?: string;
+}
+
+export interface AIChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  structured?: {
+    answer?: string;
+    evidence?: string[];
+    interpretation?: string;
+    confidence?: 'High' | 'Medium' | 'Low';
+    limitations?: string[];
+    recommendedAction?: string;
+  };
+  actions?: AIUIAction[];
+  dataRef?: {
+    parcelId?: string;
+    reportId?: string;
+    sceneId?: string;
+  };
 }
 
 export interface MRVReportRecord {
@@ -191,7 +273,7 @@ export interface MRVReportRecord {
   payload?: FullAnalysisPayload;
 }
 
-export type ActiveTab = 'monitor' | 'analysis' | 'reports' | 'methodology';
+export type ActiveTab = 'monitor' | 'analysis' | 'parcels' | 'reports' | 'assistant' | 'methodology' | 'settings';
 export type TabType = ActiveTab;
-export type LayerMode = 'satellite' | 'rgb' | 'ndvi' | 'ndwi' | 'ndmi' | 'water';
+export type LayerMode = 'satellite' | 'rgb' | 'ndvi' | 'ndwi' | 'ndmi' | 'water' | 'stress';
 export type AnalyticsSubTab = 'vegetation' | 'water' | 'soil' | 'carbon';

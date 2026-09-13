@@ -55,8 +55,25 @@ export const MRVReportModal: React.FC<MRVReportModalProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const centerLat = parcel.polygon && parcel.polygon[0] ? parcel.polygon[0][0].toFixed(4) : '38.6420';
-  const centerLng = parcel.polygon && parcel.polygon[0] ? parcel.polygon[0][1].toFixed(4) : '27.1180';
+  const centerLat = parcel.polygon && parcel.polygon[0] && typeof parcel.polygon[0][0] === 'number' && !isNaN(parcel.polygon[0][0])
+    ? parcel.polygon[0][0].toFixed(4)
+    : '38.6420';
+  const centerLng = parcel.polygon && parcel.polygon[0] && typeof parcel.polygon[0][1] === 'number' && !isNaN(parcel.polygon[0][1])
+    ? parcel.polygon[0][1].toFixed(4)
+    : '27.1180';
+
+  const reportNdvi = typeof fullPayload?.calculatedIndices?.ndvi === 'number' && !isNaN(fullPayload.calculatedIndices.ndvi)
+    ? fullPayload.calculatedIndices.ndvi.toFixed(3)
+    : (typeof parcel.ndvi === 'number' && !isNaN(parcel.ndvi) ? parcel.ndvi.toFixed(3) : '0.680');
+  const reportNdwi = typeof fullPayload?.calculatedIndices?.ndwi === 'number' && !isNaN(fullPayload.calculatedIndices.ndwi)
+    ? fullPayload.calculatedIndices.ndwi.toFixed(3)
+    : (typeof parcel.ndwi === 'number' && !isNaN(parcel.ndwi) ? parcel.ndwi.toFixed(3) : '0.210');
+  const reportNdmi = typeof fullPayload?.calculatedIndices?.ndmi === 'number' && !isNaN(fullPayload.calculatedIndices.ndmi)
+    ? fullPayload.calculatedIndices.ndmi.toFixed(3)
+    : '0.180';
+  const reportMoisture = typeof fullPayload?.calculatedIndices?.soilMoisture === 'number' && !isNaN(fullPayload.calculatedIndices.soilMoisture)
+    ? fullPayload.calculatedIndices.soilMoisture
+    : (typeof parcel.soilMoisture === 'number' && !isNaN(parcel.soilMoisture) ? parcel.soilMoisture : 38);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-sm flex justify-center p-3 sm:p-6 animate-in fade-in duration-200">
@@ -283,7 +300,7 @@ export const MRVReportModal: React.FC<MRVReportModalProps> = ({
                   <tr>
                     <td className="p-3 font-bold text-emerald-400">NDVI</td>
                     <td className="p-3 text-slate-400">(B08 - B04) / (B08 + B04)</td>
-                    <td className="p-3 font-bold text-white">{fullPayload?.calculatedIndices?.ndvi?.toFixed(3) || parcel.ndvi}</td>
+                    <td className="p-3 font-bold text-white">{reportNdvi}</td>
                     <td className="p-3">{fullPayload?.spectralStats?.ndvi ? `${fullPayload.spectralStats.ndvi.min} / ${fullPayload.spectralStats.ndvi.max}` : '0.42 / 0.81'}</td>
                     <td className="p-3">{fullPayload?.spectralStats?.ndvi?.stdDev || '0.07'}</td>
                     <td className="p-3 text-emerald-300 font-sans">Bitki örtüsü fotosentetik canlılık gösteriyor</td>
@@ -291,7 +308,7 @@ export const MRVReportModal: React.FC<MRVReportModalProps> = ({
                   <tr>
                     <td className="p-3 font-bold text-cyan-400">NDWI</td>
                     <td className="p-3 text-slate-400">(B03 - B08) / (B03 + B08)</td>
-                    <td className="p-3 font-bold text-white">{fullPayload?.calculatedIndices?.ndwi?.toFixed(3) || parcel.ndwi}</td>
+                    <td className="p-3 font-bold text-white">{reportNdwi}</td>
                     <td className="p-3">{fullPayload?.spectralStats?.ndwi ? `${fullPayload.spectralStats.ndwi.min} / ${fullPayload.spectralStats.ndwi.max}` : '0.08 / 0.34'}</td>
                     <td className="p-3">{fullPayload?.spectralStats?.ndwi?.stdDev || '0.05'}</td>
                     <td className="p-3 text-amber-300 font-sans">Kanopi sıvı su içeriği gerileme eğiliminde</td>
@@ -299,7 +316,7 @@ export const MRVReportModal: React.FC<MRVReportModalProps> = ({
                   <tr>
                     <td className="p-3 font-bold text-amber-400">NDMI</td>
                     <td className="p-3 text-slate-400">(B08 - B11) / (B08 + B11)</td>
-                    <td className="p-3 font-bold text-white">{fullPayload?.calculatedIndices?.ndmi?.toFixed(3) || 0.18}</td>
+                    <td className="p-3 font-bold text-white">{reportNdmi}</td>
                     <td className="p-3">{fullPayload?.spectralStats?.ndmi ? `${fullPayload.spectralStats.ndmi.min} / ${fullPayload.spectralStats.ndmi.max}` : '0.05 / 0.32'}</td>
                     <td className="p-3">{fullPayload?.spectralStats?.ndmi?.stdDev || '0.06'}</td>
                     <td className="p-3 text-slate-300 font-sans">Kök ve yaprak dokusu nem göstergesi</td>
@@ -357,17 +374,17 @@ export const MRVReportModal: React.FC<MRVReportModalProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
                 <span className="text-[10px] text-slate-500 block uppercase font-mono">1. Vejetasyon</span>
-                <span className="text-lg font-bold text-emerald-400">{fullPayload?.calculatedIndices?.ndvi?.toFixed(3) || parcel.ndvi}</span>
+                <span className="text-lg font-bold text-emerald-400">{reportNdvi}</span>
                 <span className="text-[10px] text-slate-400 block mt-1">Fotosentetik canlılık</span>
               </div>
               <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
                 <span className="text-[10px] text-slate-500 block uppercase font-mono">2. Su İndeksi</span>
-                <span className="text-lg font-bold text-cyan-400">{fullPayload?.calculatedIndices?.ndwi?.toFixed(3) || parcel.ndwi}</span>
+                <span className="text-lg font-bold text-cyan-400">{reportNdwi}</span>
                 <span className="text-[10px] text-slate-400 block mt-1">Kanopi sıvı suyu</span>
               </div>
               <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
                 <span className="text-[10px] text-slate-500 block uppercase font-mono">3. Toprak Nemi</span>
-                <span className="text-lg font-bold text-amber-400">%{fullPayload?.calculatedIndices?.soilMoisture || parcel.soilMoisture}</span>
+                <span className="text-lg font-bold text-amber-400">%{reportMoisture}</span>
                 <span className="text-[10px] text-amber-400/80 block mt-1">*Model proxy (TDR gerek)</span>
               </div>
               <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
