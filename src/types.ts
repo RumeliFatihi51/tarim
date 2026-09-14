@@ -1,8 +1,35 @@
 export type RiskStatus = 'healthy' | 'moderate' | 'high-risk';
 export type WaterStressLevel = 'Low' | 'Medium' | 'High';
 export type PlantHealthLevel = 'Poor' | 'Moderate' | 'Good';
-export type CarbonIndicatorTrend = 'Negative' | 'Stable' | 'Positive';
+export type CarbonIndicatorTrend = 'Negative' | 'Stable' | 'Positive' | 'Unavailable';
 export type AnalysisMode = 'LIVE' | 'DEMO';
+export type EvidenceStatus = 'MEASURED' | 'ESTIMATED' | 'AI_INFERENCE' | 'FIELD_VERIFIED';
+export type VerificationState = 'NOT_VERIFIED' | 'REQUIRES_FIELD_VERIFICATION' | 'FIELD_VERIFIED';
+
+export interface GeoPolygon {
+  type: 'Polygon';
+  coordinates: [number, number][][];
+}
+
+export interface SatelliteScene {
+  id: string;
+  provider: string;
+  platform: string;
+  collection: string;
+  datetime: string;
+  cloudCoverPercent: number;
+  tileId: string;
+  bbox: [number, number, number, number];
+  quality?: { validPixelRatio: number; cloudRatio: number; shadowRatio: number; noDataRatio: number };
+  assets: Record<string, { href: string } | undefined> & {
+    B02?: { href: string }; B03?: { href: string }; B04?: { href: string }; B05?: { href: string };
+    B08?: { href: string }; B11?: { href: string }; B12?: { href: string }; SCL?: { href: string };
+  };
+}
+
+export interface SpectralStatistics {
+  count: number; mean: number; median: number; min: number; max: number; stdDev: number;
+}
 
 export interface SpectralBands {
   B02: number; // Blue (490 nm)
@@ -11,6 +38,17 @@ export interface SpectralBands {
   B08: number; // NIR (842 nm)
   B11: number; // SWIR (1610 nm)
   B12?: number; // SWIR-2 (2190 nm)
+}
+
+export interface IndexMetadata {
+  formula: string;
+  inputBands: string[];
+  resolutionMeters: number;
+  source: string;
+  processedAt: string;
+  maskingMethod: 'Sentinel-2 SCL';
+  resampling: 'nearest-neighbor';
+  algorithmVersion: string;
 }
 
 export interface PixelStatistics {
@@ -40,6 +78,40 @@ export interface RasterVisualizations {
   bounds?: [[number, number], [number, number]]; // [[south, west], [north, east]]
 }
 
+export interface RasterAnalysisResult {
+  scene: SatelliteScene;
+  pixelStats: PixelStatistics & { shadowMaskedPixels?: number; noDataPixels?: number; shadowRatio?: number; noDataRatio?: number };
+  reflectances: SpectralBands;
+  indices: {
+    ndvi: SpectralStatistics; ndwi: SpectralStatistics; ndmi: SpectralStatistics; nbr: SpectralStatistics;
+    ndre?: SpectralStatistics; evi?: SpectralStatistics; savi?: SpectralStatistics;
+  };
+  indexMetadata: Record<'ndvi' | 'ndwi' | 'ndmi' | 'nbr', IndexMetadata>;
+  spatialRiskGrid?: { totalCells: number; stressedCells: number; watchCells: number; healthyCells: number; stressPercentage: number };
+  derivedMoistureProxy: { canopyMoistureIndex: number; estimatedMoistureScore: number; disclaimer: string };
+  visualizations: RasterVisualizations & { stressPngBase64?: string; bounds: [[number, number], [number, number]] };
+}
+
+export interface AuditTrailEntry {
+  timestamp: string; stage: string; action: string; operator: string; details: string; evidenceRef?: string;
+}
+
+export interface TimeSeriesObservation {
+  date: string; sceneId: string; cloudCover: number; validPixelRatio: number; ndvi: number; ndwi: number; ndmi: number;
+  nbr?: number; soilMoistureProxy: number; sustainabilityScore?: number;
+}
+
+export interface PipelineStageStatus {
+  id: string; number: number; name: string; description: string;
+  status: 'pending' | 'running' | 'completed' | 'failed'; techDetail?: string; durationMs?: number;
+}
+
+export interface AnalysisJob {
+  id: string; mode: AnalysisMode; status: 'queued' | 'running' | 'completed' | 'failed'; currentStageNumber: number;
+  totalStages: number; stages: PipelineStageStatus[]; error?: string; errorCode?: string; result?: unknown;
+  companyId?: string; createdAt: string; updatedAt: string;
+}
+
 export interface SatelliteMetadata {
   sensor: string; // e.g. 'Copernicus Sentinel-2B MSI'
   sceneId: string; // e.g. 'S2B_MSIL2A_20260908T084559_N0500_R107_T35SNC'
@@ -58,9 +130,9 @@ export interface HistoricalObservation {
   ndvi: number;
   ndwi: number;
   ndmi?: number;
-  soilMoisture: number;
+  soilMoisture?: number;
   soilMoistureProxy?: number;
-  sustainabilityScore: number;
+  sustainabilityScore?: number;
   cloudCover?: number;
   sceneId?: string;
   validPixelRatio?: number;
@@ -82,8 +154,8 @@ export interface Parcel {
   crop: string;
   areaHa: number;
   status: RiskStatus;
-  sustainabilityScore: number;
-  scoreBreakdown: {
+  sustainabilityScore?: number;
+  scoreBreakdown?: {
     vegetation: number;
     water: number;
     soil: number;
@@ -190,9 +262,9 @@ export interface WeatherData {
   parcelId: string;
   period: string;
   temperatureC: number;
-  temperatureAnomalyC: number;
+  temperatureAnomalyC?: number;
   rainfallMm: number;
-  rainfallAnomalyPercent: number;
+  rainfallAnomalyPercent?: number;
   relativeHumidityPercent: number;
   et0MmPerDay: number;
   droughtRiskIndex: 'Low' | 'Moderate' | 'High' | 'Severe';
@@ -204,6 +276,11 @@ export interface WeatherData {
   windSpeedKmh?: number;
   soilTemperatureC?: number;
   observationDate?: string;
+  provider?: string;
+  fetchedAt?: string;
+  location?: { lat: number; lng: number };
+  units?: Record<string, string>;
+  dataFreshness?: string;
 }
 
 export interface PracticeSignal {

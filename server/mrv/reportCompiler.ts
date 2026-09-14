@@ -1,6 +1,7 @@
 import { RasterAnalysisResult, TimeSeriesObservation, GeoPolygon } from '../types';
 import { AIAnalysisOutput } from '../ai/geminiAnalyzer';
 import { getPolygonBBox, calculatePolygonAreaHa, getUtmEpsg } from '../processing/geometryUtils';
+import crypto from 'crypto';
 
 export interface MRVSection {
   number: number;
@@ -78,7 +79,7 @@ export class ReportCompiler {
         category: 'Executive',
         content: `${parcelName} (${crop}, ${areaHa} ha) parseli için Copernicus Sentinel-2 Level-2A (BOA) optik uydu geçişine ait multispektral analitik inceleme tamamlanmıştır. Ortalama NDVI vejetasyon canlılık indeksi ${indices.ndvi.mean}, NDWI su indeksi ${indices.ndwi.mean} ve NDMI kanopi nem indeksi ${indices.ndmi.mean} olarak ölçülmüştür. Parsel genel durumu: ${aiOutput.overallStatus}.`,
         keyMetrics: [
-          { label: 'Çevresel Durum', value: aiOutput.overallStatus, badge: 'Denetim Onaylı' },
+          { label: 'Çevresel Durum', value: aiOutput.overallStatus, badge: 'Uydu-türevli' },
           { label: 'Ortalama NDVI', value: indices.ndvi.mean },
           { label: 'Kanopi Nem Skoru', value: `${derivedMoistureProxy.estimatedMoistureScore}/100` },
           { label: 'Analiz Modu', value: isDemo ? 'DEMO VERİSİ' : 'CANLI SENTINEL-2' },
@@ -250,7 +251,7 @@ export class ReportCompiler {
         id: 'supply-chain-scope3',
         title: 'Tedarik Zinciri ve Scope 3 Çevresel Etki',
         category: 'Compliance',
-        content: `Tedarik zincirindeki tarımsal kaynaklı Kapsam 3 (Scope 3) emisyon ve su tüketim izlenebilirliği için parsel bazlı uydu verisi birincil nesnel kanıt sunmaktadır.`,
+        content: `Parsel bazlı uydu gözlemleri tedarik zinciri çevresel izleme sürecine yardımcı kanıt sağlar; tek başına Kapsam 3 emisyonu veya su tüketimi ölçmez.`,
         bulletPoints: [
           'Tedarikçi bazlı arazi bozulması ve su stresi şeffaflığı sağlandı.',
           'Gerçekleşen spektral izleme denetim firmaları ve kredi kuruluşları için doğrulanabilir veri oluşturmaktadır.',
@@ -261,9 +262,9 @@ export class ReportCompiler {
       {
         number: 14,
         id: 'csrd-esrs-alignment',
-        title: 'CSRD ve ESRS Çevresel Standartları ile Uyum',
+        title: 'CSRD ve ESRS İçin Bilgilendirici Eşleme',
         category: 'Compliance',
-        content: `Bu denetim raporu Avrupa Birliği Kurumsal Sürdürülebilirlik Raporlama Direktifi (CSRD) çerçevesinde ESRS E4 (Biyoçeşitlilik ve Ekosistemler), ESRS E1 (İklim Değişikliği) ve ESRS E3 (Su ve Deniz Kaynakları) standartlarına veri temeli sağlamaktadır.`,
+        content: `Bu rapor ESRS E1, E3 ve E4 değerlendirmelerine yardımcı olabilecek uydu-türevli göstergeler sunar; mevzuata uyum veya güvence görüşü oluşturmaz.`,
         keyMetrics: [
           { label: 'ESRS E4 Biyoçeşitlilik', value: 'Vejetasyon Haritası ve Örtü Takibi' },
           { label: 'ESRS E3 Su Kaynakları', value: 'NDWI ve NDMI Hidrik İzleme' },
@@ -336,7 +337,7 @@ export class ReportCompiler {
     return {
       reportId,
       generatedAt: dateFormatted,
-      complianceStandard: 'CSRD / ESRS E1, E3, E4 & GHG Protocol Scope 3',
+      complianceStandard: 'Informational mapping to ESRS E1/E3/E4; not certification or assurance',
       parcel: {
         name: parcelName,
         crop,
@@ -364,7 +365,7 @@ export class ReportCompiler {
         pixelCount: pixelStats.totalPixels,
         validPixelCount: pixelStats.validPixels,
         cloudMaskedPixelCount: pixelStats.cloudMaskedPixels,
-        sha256Digest: `sha256-${Buffer.from(scene.id + dateFormatted).toString('base64').slice(0, 24)}`,
+        sha256Digest: crypto.createHash('sha256').update(JSON.stringify({ sceneId: scene.id, acquiredAt: scene.datetime, polygon, pixelStats, indices, algorithmVersion: rasterResult.indexMetadata.ndvi.algorithmVersion })).digest('hex'),
       },
     };
   }

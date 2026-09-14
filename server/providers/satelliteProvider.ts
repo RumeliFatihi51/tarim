@@ -1,4 +1,6 @@
 import { SatelliteScene } from '../types';
+import { fetchWithTimeout } from '../http';
+import { config } from '../config';
 
 export interface ISatelliteProvider {
   name: string;
@@ -52,7 +54,7 @@ export class PlanetaryComputerProvider implements ISatelliteProvider {
 
     console.log(`[SENTINEL] Searching Planetary Computer STAC for bbox [${bbox.join(', ')}]...`);
 
-    const response = await fetch(this.stacUrl, {
+    const response = await fetchWithTimeout(this.stacUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -83,6 +85,7 @@ export class PlanetaryComputerProvider implements ISatelliteProvider {
           B02: f.assets?.['B02'] ? { href: f.assets['B02'].href } : undefined,
           B03: f.assets?.['B03'] ? { href: f.assets['B03'].href } : undefined,
           B04: f.assets?.['B04'] ? { href: f.assets['B04'].href } : undefined,
+          B05: f.assets?.['B05'] ? { href: f.assets['B05'].href } : undefined,
           B08: f.assets?.['B08'] ? { href: f.assets['B08'].href } : undefined,
           B11: f.assets?.['B11'] ? { href: f.assets['B11'].href } : undefined,
           B12: f.assets?.['B12'] ? { href: f.assets['B12'].href } : undefined,
@@ -108,15 +111,15 @@ export class PlanetaryComputerProvider implements ISatelliteProvider {
         headers['Ocp-Apim-Subscription-Key'] = apiKey;
       }
 
-      const res = await fetch(`${this.sasSignUrl}${encodeURIComponent(url)}`, { headers });
+      const res = await fetchWithTimeout(`${this.sasSignUrl}${encodeURIComponent(url)}`, { headers });
       if (!res.ok) {
-        return url; // fallback to original
+        throw new Error(`Planetary Computer asset signing failed (${res.status})`);
       }
       const data: any = await res.json();
-      return data.href || url;
+      if (!data.href) throw new Error('Planetary Computer signing response did not contain an asset URL');
+      return data.href;
     } catch (e) {
-      console.warn('[SENTINEL] SAS URL signing warning:', e);
-      return url;
+      throw new Error(`Planetary Computer asset signing failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 }
@@ -152,7 +155,7 @@ export class EarthSearchProvider implements ISatelliteProvider {
 
     console.log(`[SENTINEL] Searching Earth Search STAC for bbox [${bbox.join(', ')}]...`);
 
-    const response = await fetch(this.stacUrl, {
+    const response = await fetchWithTimeout(this.stacUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -184,8 +187,10 @@ export class EarthSearchProvider implements ISatelliteProvider {
           B02: f.assets?.['blue'] ? { href: f.assets['blue'].href } : undefined,
           B03: f.assets?.['green'] ? { href: f.assets['green'].href } : undefined,
           B04: f.assets?.['red'] ? { href: f.assets['red'].href } : undefined,
+          B05: f.assets?.['rededge1'] ? { href: f.assets['rededge1'].href } : undefined,
           B08: f.assets?.['nir'] ? { href: f.assets['nir'].href } : undefined,
           B11: f.assets?.['swir16'] ? { href: f.assets['swir16'].href } : undefined,
+          B12: f.assets?.['swir22'] ? { href: f.assets['swir22'].href } : undefined,
           SCL: f.assets?.['scl'] ? { href: f.assets['scl'].href } : undefined,
           visual: f.assets?.['visual'] ? { href: f.assets['visual'].href } : undefined,
           rendered_preview: f.assets?.['thumbnail'] ? { href: f.assets['thumbnail'].href } : undefined,
@@ -243,4 +248,8 @@ export class CompositeSatelliteProvider implements ISatelliteProvider {
   }
 }
 
-export const defaultSatelliteProvider = new CompositeSatelliteProvider();
+export const defaultSatelliteProvider: ISatelliteProvider = config.SATELLITE_PROVIDER === 'planetary_computer'
+  ? new PlanetaryComputerProvider()
+  : config.SATELLITE_PROVIDER === 'earth_search'
+    ? new EarthSearchProvider()
+    : new CompositeSatelliteProvider();

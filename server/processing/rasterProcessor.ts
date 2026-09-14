@@ -4,6 +4,8 @@ import { PNG } from 'pngjs';
 import { GeoPolygon, SatelliteScene, RasterAnalysisResult, SpectralStatistics } from '../types';
 import { ISatelliteProvider } from '../providers/satelliteProvider';
 import { getPolygonBBox, getUtmEpsg, pointInPolygon } from './geometryUtils';
+import { ALGORITHM_VERSION, INDEX_METADATA, calculateNbr, calculateNdmi, calculateNdre, calculateNdvi, calculateNdwi, isValidSclClass, toReflectance } from './spectralIndices';
+import { AppError } from '../errors';
 
 function calculateStats(values: number[]): SpectralStatistics {
   const clean = values.filter((v) => typeof v === 'number' && !isNaN(v) && isFinite(v));
@@ -99,28 +101,32 @@ export class RasterProcessor {
     const b03Href = scene.assets.B03?.href;
     const b02Href = scene.assets.B02?.href;
     const b11Href = scene.assets.B11?.href;
+    const b12Href = scene.assets.B12?.href;
+    const b05Href = scene.assets.B05?.href;
     const sclHref = scene.assets.SCL?.href;
 
     if (!b04Href || !b08Href) {
       throw new Error(`Canlı Sentinel-2 analizi tamamlanamadı: Sahne (${scene.id}) için temel B04 (Red) veya B08 (NIR) bantları bulunamadı.`);
     }
 
-    if (!isDemo && (!b03Href || !b02Href || !b11Href)) {
-      const missing = [!b03Href && 'B03', !b02Href && 'B02', !b11Href && 'B11'].filter(Boolean).join(', ');
-      throw new Error(`Canlı analiz tamamlanamadı: Gerekli Sentinel-2 bandı (${missing}) bu sahne için sağlanamadı.`);
+    if (!b03Href || !b02Href || !b11Href || !b12Href || !sclHref) {
+      const missing = [!b03Href && 'B03', !b02Href && 'B02', !b11Href && 'B11', !b12Href && 'B12', !sclHref && 'SCL'].filter(Boolean).join(', ');
+      throw new AppError('MISSING_SATELLITE_ASSET', `Gerekli Sentinel-2 assetleri eksik: ${missing}`, 422);
     }
 
     console.log(`[RASTER] Signing asset URLs for scene ${scene.id}...`);
-    const [b04Url, b08Url, b03Url, b02Url, b11Url, sclUrl] = await Promise.all([
+    const [b04Url, b08Url, b03Url, b02Url, b11Url, b12Url, b05Url, sclUrl] = await Promise.all([
       provider.signAssetUrl(b04Href),
       provider.signAssetUrl(b08Href),
       b03Href ? provider.signAssetUrl(b03Href) : Promise.resolve(''),
       b02Href ? provider.signAssetUrl(b02Href) : Promise.resolve(''),
       b11Href ? provider.signAssetUrl(b11Href) : Promise.resolve(''),
+      b12Href ? provider.signAssetUrl(b12Href) : Promise.resolve(''),
+      b05Href ? provider.signAssetUrl(b05Href) : Promise.resolve(''),
       sclHref ? provider.signAssetUrl(sclHref) : Promise.resolve(''),
     ]);
 
-    if (!isDemo && (!b04Url || !b08Url || !b11Url)) {
+    if (!b04Url || !b08Url || !b03Url || !b02Url || !b11Url || !b12Url || !sclUrl) {
       throw new Error('Canlı analiz tamamlanamadı: Sentinel-2 bantlarının imzalı erişim URL adresleri alınamadı.');
     }
 
@@ -157,12 +163,9 @@ export class RasterProcessor {
       throw new Error(`Parsel koordinatları Sentinel-2 sahnesi sınırları dışındadır (${minCol}, ${minRow}).`);
     }
 
-    // Limit maximum window to 250x250 pixels (~625 ha) to ensure super fast processing
+    // Reject oversized work instead of silently truncating the submitted polygon.
     if (width > 250 || height > 250) {
-      maxCol = minCol + 250;
-      maxRow = minRow + 250;
-      width = maxCol - minCol;
-      height = maxRow - minRow;
+      throw new AppError('VALIDATION_ERROR', `Raster window ${width}x${height} exceeds the 250x250 pixel processing limit`, 413);
     }
 
     const window10m: [number, number, number, number] = [minCol, minRow, maxCol, maxRow];
@@ -203,6 +206,9 @@ export class RasterProcessor {
       readPromises.push(Promise.resolve(null));
     }
 
+    readPromises.push(fromUrl(b12Url).then((t) => t.getImage()).then((img) => img.readRasters({ window: window20m })));
+    readPromises.push(b05Url ? fromUrl(b05Url).then((t) => t.getImage()).then((img) => img.readRasters({ window: window20m })) : Promise.resolve(null));
+
     if (sclUrl) {
       readPromises.push(fromUrl(sclUrl).then((t) => t.getImage()).then((img) => img.readRasters({ window: window20m })));
     } else {
@@ -210,19 +216,23 @@ export class RasterProcessor {
       readPromises.push(Promise.resolve(null));
     }
 
-    const [b04Raster, b08Raster, b03Raster, b02Raster, b11Raster, sclRaster] = await Promise.all(readPromises);
+    const [b04Raster, b08Raster, b03Raster, b02Raster, b11Raster, b12Raster, b05Raster, sclRaster] = await Promise.all(readPromises);
 
     const b04Data = Array.from((b04Raster as any)[0] as any[]).map(Number);
     const b08Data = Array.from((b08Raster as any)[0] as any[]).map(Number);
-    const b03Data = b03Raster ? Array.from((b03Raster as any)[0] as any[]).map(Number) : b04Data.map((v) => v * 0.9);
-    const b02Data = b02Raster ? Array.from((b02Raster as any)[0] as any[]).map(Number) : b04Data.map((v) => v * 0.7);
+    const b03Data = Array.from((b03Raster as any)[0] as any[]).map(Number);
+    const b02Data = Array.from((b02Raster as any)[0] as any[]).map(Number);
 
     // Resample 20m B11 and SCL to 10m grid
     const width20 = window20m[2] - window20m[0];
     const b11Data20 = b11Raster ? Array.from((b11Raster as any)[0] as any[]).map(Number) : null;
+    const b12Data20 = Array.from((b12Raster as any)[0] as any[]).map(Number);
+    const b05Data20 = b05Raster ? Array.from((b05Raster as any)[0] as any[]).map(Number) : null;
     const sclData20 = sclRaster ? Array.from((sclRaster as any)[0] as any[]).map(Number) : null;
 
     const b11Data: number[] = new Array(width * height);
+    const b12Data: number[] = new Array(width * height);
+    const b05Data: number[] = new Array(width * height);
     const sclData: number[] = new Array(width * height);
 
     for (let r = 0; r < height; r++) {
@@ -231,8 +241,10 @@ export class RasterProcessor {
         const c20 = Math.floor(c / 2);
         const idx20 = r20 * width20 + c20;
         const idx10 = r * width + c;
-        b11Data[idx10] = b11Data20 ? (b11Data20[idx20] || 1600) : b04Data[idx10] * 1.5;
-        sclData[idx10] = sclData20 ? (sclData20[idx20] || 4) : 4;
+        b11Data[idx10] = b11Data20?.[idx20] ?? Number.NaN;
+        b12Data[idx10] = b12Data20[idx20] ?? Number.NaN;
+        b05Data[idx10] = b05Data20?.[idx20] ?? Number.NaN;
+        sclData[idx10] = sclData20?.[idx20] ?? 0;
       }
     }
 
@@ -242,10 +254,13 @@ export class RasterProcessor {
     let totalPixelsInPolygon = 0;
     let validPixels = 0;
     let cloudMaskedPixels = 0;
+    let shadowMaskedPixels = 0;
+    let noDataPixels = 0;
 
     const ndviValues: number[] = [];
     const ndwiValues: number[] = [];
     const ndmiValues: number[] = [];
+    const nbrValues: number[] = [];
     const ndreValues: number[] = [];
     const eviValues: number[] = [];
     const saviValues: number[] = [];
@@ -254,6 +269,7 @@ export class RasterProcessor {
     const b04Values: number[] = [];
     const b08Values: number[] = [];
     const b11Values: number[] = [];
+    const b12Values: number[] = [];
 
     // Mask array: 1 = valid inside polygon, 0 = outside or cloud
     const pixelMask = new Uint8Array(width * height);
@@ -283,69 +299,72 @@ export class RasterProcessor {
 
         // Cloud / Cloud Shadow detection using SCL
         const sclVal = sclData[idx];
-        const isCloudOrShadow = sclVal === 3 || sclVal === 8 || sclVal === 9 || sclVal === 10 || sclVal === 11 || sclVal === 1;
+        const isCloudOrShadow = !isValidSclClass(sclVal);
 
         if (isCloudOrShadow) {
-          cloudMaskedPixels++;
+          if (sclVal === 3) shadowMaskedPixels++;
+          else if (sclVal === 0 || sclVal === 1) noDataPixels++;
+          else cloudMaskedPixels++;
           pixelMask[idx] = 0;
           continue;
         }
-
-        // Valid optical pixel
-        validPixels++;
-        pixelMask[idx] = 1;
 
         const raw02 = b02Data[idx];
         const raw03 = b03Data[idx];
         const raw04 = b04Data[idx];
         const raw08 = b08Data[idx];
         const raw11 = b11Data[idx];
+        const raw12 = b12Data[idx];
 
-        const r02 = typeof raw02 === 'number' && !isNaN(raw02) && isFinite(raw02) && raw02 > 0 ? Math.max(0.001, raw02 / 10000) : 0.045;
-        const r03 = typeof raw03 === 'number' && !isNaN(raw03) && isFinite(raw03) && raw03 > 0 ? Math.max(0.001, raw03 / 10000) : 0.075;
-        const r04 = typeof raw04 === 'number' && !isNaN(raw04) && isFinite(raw04) && raw04 > 0 ? Math.max(0.001, raw04 / 10000) : 0.062;
-        const r08 = typeof raw08 === 'number' && !isNaN(raw08) && isFinite(raw08) && raw08 > 0 ? Math.max(0.001, raw08 / 10000) : 0.320;
-        const r11 = typeof raw11 === 'number' && !isNaN(raw11) && isFinite(raw11) && raw11 > 0 ? Math.max(0.001, raw11 / 10000) : 0.170;
+        const r02 = toReflectance(raw02); const r03 = toReflectance(raw03); const r04 = toReflectance(raw04);
+        const r08 = toReflectance(raw08); const r11 = toReflectance(raw11); const r12 = toReflectance(raw12);
+        if (r02 === null || r03 === null || r04 === null || r08 === null || r11 === null || r12 === null) {
+          pixelMask[idx] = 0;
+          continue;
+        }
+        validPixels++;
+        pixelMask[idx] = 1;
 
         b02Values.push(r02);
         b03Values.push(r03);
         b04Values.push(r04);
         b08Values.push(r08);
         b11Values.push(r11);
+        b12Values.push(r12);
 
         // 1. Real NDVI = (NIR - Red) / (NIR + Red)
-        const denomNdvi = r08 + r04;
-        const ndvi = denomNdvi > 0.0001 ? (r08 - r04) / denomNdvi : 0.65;
-        const clampedNdvi = Math.max(-1, Math.min(1, isNaN(ndvi) ? 0.65 : ndvi));
+        const ndvi = calculateNdvi(r08, r04);
+        const ndwi = calculateNdwi(r03, r08);
+        const ndmi = calculateNdmi(r08, r11);
+        const nbr = calculateNbr(r08, r12);
+        if (ndvi === null || ndwi === null || ndmi === null || nbr === null) { pixelMask[idx] = 0; validPixels--; continue; }
+        const clampedNdvi = ndvi;
         ndviValues.push(clampedNdvi);
         pixelNdvi[idx] = clampedNdvi;
 
         // 2. Real NDWI = (Green - NIR) / (Green + NIR)
-        const denomNdwi = r03 + r08;
-        const ndwi = denomNdwi > 0.0001 ? (r03 - r08) / denomNdwi : 0.22;
-        const clampedNdwi = Math.max(-1, Math.min(1, isNaN(ndwi) ? 0.22 : ndwi));
+        const clampedNdwi = ndwi;
         ndwiValues.push(clampedNdwi);
         pixelNdwi[idx] = clampedNdwi;
 
         // 3. Real NDMI = (NIR - SWIR) / (NIR + SWIR)
-        const denomNdmi = r08 + r11;
-        const ndmi = denomNdmi > 0.0001 ? (r08 - r11) / denomNdmi : 0.18;
-        const clampedNdmi = Math.max(-1, Math.min(1, isNaN(ndmi) ? 0.18 : ndmi));
+        const clampedNdmi = ndmi;
         ndmiValues.push(clampedNdmi);
         pixelNdmi[idx] = clampedNdmi;
 
-        // 4. NDRE proxy
-        const ndre = denomNdvi > 0.0001 ? (r08 - r04 * 1.15) / (r08 + r04 * 1.15) : 0.55;
-        ndreValues.push(Math.max(-1, Math.min(1, ndre)));
+        nbrValues.push(nbr);
+        const r05 = toReflectance(b05Data[idx]);
+        const ndre = r05 === null ? null : calculateNdre(r08, r05);
+        if (ndre !== null) ndreValues.push(ndre);
 
         // 5. EVI = 2.5 * (NIR - Red) / (NIR + 6*Red - 7.5*Blue + 1)
         const denomEvi = r08 + 6 * r04 - 7.5 * r02 + 1;
-        const evi = Math.abs(denomEvi) > 0.01 ? (2.5 * (r08 - r04)) / denomEvi : clampedNdvi * 0.85;
-        eviValues.push(Math.max(-1, Math.min(1.5, isNaN(evi) ? 0.45 : evi)));
+        const evi = Math.abs(denomEvi) > 0.01 ? (2.5 * (r08 - r04)) / denomEvi : Number.NaN;
+        if (Number.isFinite(evi)) eviValues.push(Math.max(-1, Math.min(1.5, evi)));
 
         // 6. SAVI = 1.5 * (NIR - Red) / (NIR + Red + 0.5)
         const savi = (1.5 * (r08 - r04)) / (r08 + r04 + 0.5);
-        saviValues.push(Math.max(-1, Math.min(1.2, isNaN(savi) ? 0.48 : savi)));
+        if (Number.isFinite(savi)) saviValues.push(Math.max(-1, Math.min(1.2, savi)));
 
         // Spatial Risk Classification for this pixel
         if (clampedNdmi < -0.12 || clampedNdwi < -0.22) {
@@ -361,27 +380,12 @@ export class RasterProcessor {
       }
     }
 
-    if (validPixels === 0 && totalPixelsInPolygon > 0) {
-      if (!isDemo) {
-        throw new Error('Canlı analiz başarısız: Seçilen parsel alanı %100 bulut veya gölge altında kalmaktadır. Lütfen bulutsuz başka bir tarih aralığı veya parsel seçin.');
-      }
-      for (let i = 0; i < totalPixelsInWindow; i++) {
-        ndviValues.push(0.65);
-        ndwiValues.push(0.22);
-        ndmiValues.push(0.18);
-        b04Values.push(0.065);
-        b08Values.push(0.320);
-        b03Values.push(0.075);
-        b02Values.push(0.045);
-        b11Values.push(0.170);
-        pixelMask[i] = 1;
-        validPixels++;
-      }
-    }
+    if (validPixels === 0) throw new AppError('INSUFFICIENT_VALID_PIXELS', 'Parsel üzerinde geçerli, bulutsuz Sentinel-2 pikseli bulunamadı.', 422);
 
     const ndviStats = calculateStats(ndviValues);
     const ndwiStats = calculateStats(ndwiValues);
     const ndmiStats = calculateStats(ndmiValues);
+    const nbrStats = calculateStats(nbrValues);
     const ndreStats = calculateStats(ndreValues);
     const eviStats = calculateStats(eviValues);
     const saviStats = calculateStats(saviValues);
@@ -391,9 +395,12 @@ export class RasterProcessor {
     const b04Stats = calculateStats(b04Values);
     const b08Stats = calculateStats(b08Values);
     const b11Stats = calculateStats(b11Values);
+    const b12Stats = calculateStats(b12Values);
 
     const validRatio = totalPixelsInPolygon > 0 ? parseFloat((validPixels / totalPixelsInPolygon).toFixed(3)) : 1.0;
     const cloudRatio = totalPixelsInPolygon > 0 ? parseFloat((cloudMaskedPixels / totalPixelsInPolygon).toFixed(3)) : 0.0;
+    const shadowRatio = totalPixelsInPolygon > 0 ? parseFloat((shadowMaskedPixels / totalPixelsInPolygon).toFixed(3)) : 0.0;
+    const noDataRatio = totalPixelsInPolygon > 0 ? parseFloat((noDataPixels / totalPixelsInPolygon).toFixed(3)) : 0.0;
 
     console.log(`[RASTER] Processed ${validPixels} valid pixels (Cloud: ${(cloudRatio * 100).toFixed(1)}%). Mean NDVI: ${ndviStats.mean}, NDWI: ${ndwiStats.mean}, NDMI: ${ndmiStats.mean}`);
 
@@ -482,10 +489,10 @@ export class RasterProcessor {
     const stressBase64 = `data:image/png;base64,${PNG.sync.write(pngStress).toString('base64')}`;
 
     // Calculate moisture proxy from real NDMI
-    const canopyMoistureIndex = typeof ndmiStats.mean === 'number' && !isNaN(ndmiStats.mean) ? ndmiStats.mean : 0.18;
+    const canopyMoistureIndex = ndmiStats.mean;
     const rawMoisture = ((canopyMoistureIndex + 0.2) / 0.6) * 100;
     const estimatedMoistureScore = Math.round(
-      Math.max(10, Math.min(95, !isNaN(rawMoisture) && isFinite(rawMoisture) ? rawMoisture : 38))
+      Math.max(0, Math.min(100, rawMoisture))
     );
 
     const stressPercentage = validPixels > 0 ? Math.round((stressedCount / validPixels) * 100) : 0;
@@ -498,22 +505,34 @@ export class RasterProcessor {
         cloudMaskedPixels,
         validPixelRatio: validRatio,
         cloudMaskedRatio: cloudRatio,
+        shadowMaskedPixels,
+        noDataPixels,
+        shadowRatio,
+        noDataRatio,
         resolutionMeters: 10,
       },
       reflectances: {
-        B02: b02Stats.mean || 0.045,
-        B03: b03Stats.mean || 0.075,
+        B02: b02Stats.mean,
+        B03: b03Stats.mean,
         B04: b04Stats.mean,
         B08: b08Stats.mean,
         B11: b11Stats.mean,
+        B12: b12Stats.mean,
       },
       indices: {
         ndvi: ndviStats,
         ndwi: ndwiStats,
         ndmi: ndmiStats,
-        ndre: ndreStats,
+        nbr: nbrStats,
+        ...(ndreStats.count > 0 ? { ndre: ndreStats } : {}),
         evi: eviStats,
         savi: saviStats,
+      },
+      indexMetadata: {
+        ndvi: { ...INDEX_METADATA.ndvi, inputBands: [...INDEX_METADATA.ndvi.inputBands], source: `${scene.provider}:${scene.id}`, processedAt: new Date().toISOString(), maskingMethod: 'Sentinel-2 SCL', resampling: 'nearest-neighbor', algorithmVersion: ALGORITHM_VERSION },
+        ndwi: { ...INDEX_METADATA.ndwi, inputBands: [...INDEX_METADATA.ndwi.inputBands], source: `${scene.provider}:${scene.id}`, processedAt: new Date().toISOString(), maskingMethod: 'Sentinel-2 SCL', resampling: 'nearest-neighbor', algorithmVersion: ALGORITHM_VERSION },
+        ndmi: { ...INDEX_METADATA.ndmi, inputBands: [...INDEX_METADATA.ndmi.inputBands], source: `${scene.provider}:${scene.id}`, processedAt: new Date().toISOString(), maskingMethod: 'Sentinel-2 SCL', resampling: 'nearest-neighbor', algorithmVersion: ALGORITHM_VERSION },
+        nbr: { ...INDEX_METADATA.nbr, inputBands: [...INDEX_METADATA.nbr.inputBands], source: `${scene.provider}:${scene.id}`, processedAt: new Date().toISOString(), maskingMethod: 'Sentinel-2 SCL', resampling: 'nearest-neighbor', algorithmVersion: ALGORITHM_VERSION },
       },
       spatialRiskGrid: {
         totalCells: validPixels,

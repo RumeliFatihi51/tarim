@@ -1,9 +1,11 @@
 import { AnalysisJob, PipelineStageStatus } from '../types';
+import fs from 'fs';
+import path from 'path';
 
 export const PIPELINE_STAGES: { id: string; name: string; description: string }[] = [
   { id: 'stage-1', name: 'Parsel Geometrisi Doğrulandı', description: 'GeoJSON koordinatları ve Bounding Box hesaplandı' },
   { id: 'stage-2', name: 'Copernicus Sentinel-2 Katalog Taraması', description: 'STAC Level-2A BOA görüntüleri taranıyor' },
-  { id: 'stage-3', name: 'En Uygun Uydu Gözlemi Seçildi', description: 'Düşük bulutluluklu en güncel sahne filtrelendi' },
+  { id: 'stage-3', name: 'En Uygun Uydu Gözlemi Seçildi', description: 'Asset bütünlüğü ve poligon içi SCL geçerli/bulut/gölge oranlarıyla adaylar sıralandı' },
   { id: 'stage-4', name: 'Uydu Verisi ve Bantlarına Erişim', description: '10m ve 20m COG raster URL’leri hazırlandı' },
   { id: 'stage-5', name: 'Bulut ve Gölge Filtreleme (SCL)', description: 'Scene Classification Layer ile geçersiz pikseller maskelendi' },
   { id: 'stage-6', name: 'Raster Parsel Sınırına Kırpılıyor', description: 'Seçilen poligon içi piksel matrisi ayrıştırıldı' },
@@ -19,6 +21,24 @@ export const PIPELINE_STAGES: { id: string; name: string; description: string }[
 
 export class JobManager {
   private jobs = new Map<string, AnalysisJob>();
+  private readonly storePath: string;
+
+  constructor(storePath = path.join(process.cwd(), 'data', 'jobs.json')) {
+    this.storePath = storePath;
+    try {
+      const entries = JSON.parse(fs.readFileSync(this.storePath, 'utf8')) as AnalysisJob[];
+      for (const job of entries) this.jobs.set(job.id, job);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.warn('[JOB] Could not load persistent job store');
+    }
+  }
+
+  private persist(): void {
+    fs.mkdirSync(path.dirname(this.storePath), { recursive: true });
+    const temporary = `${this.storePath}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify([...this.jobs.values()]));
+    fs.renameSync(temporary, this.storePath);
+  }
 
   createJob(jobId: string, mode: 'LIVE' | 'DEMO' = 'LIVE'): AnalysisJob {
     const stages: PipelineStageStatus[] = PIPELINE_STAGES.map((s, idx) => ({
@@ -41,6 +61,7 @@ export class JobManager {
     };
 
     this.jobs.set(jobId, job);
+    this.persist();
     return job;
   }
 
@@ -75,6 +96,7 @@ export class JobManager {
     if (status === 'failed') {
       job.status = 'failed';
     }
+    this.persist();
   }
 
   completeJob(jobId: string, result: any): void {
@@ -88,6 +110,7 @@ export class JobManager {
     job.stages.forEach((s) => {
       s.status = 'completed';
     });
+    this.persist();
   }
 
   failJob(jobId: string, error: string): void {
@@ -97,6 +120,7 @@ export class JobManager {
     job.status = 'failed';
     job.error = error;
     job.updatedAt = new Date().toISOString();
+    this.persist();
   }
 }
 

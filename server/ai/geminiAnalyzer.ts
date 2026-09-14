@@ -96,7 +96,7 @@ export class GeminiAnalyzer {
       `Copernicus Sentinel-2B L2A bulut maskeleme (%${scene.cloudCoverPercent}) berrak atmosferik koşullarda tamamlandı.`,
       isVegetationDense
         ? `${crop} kanopisi yüksek biyokütle örtüsü sergilemektedir (NDVI > 0.55).`
-        : 'Bitki örtüsü fotosentez stabilitesini korumaktadır.',
+        : 'Tek tarihli vejetasyon ölçümü belirgin eşik aşımı göstermemektedir; stabilite için zaman serisi gerekir.',
       'SCL (Scene Classification Layer) üzerinde gölge veya sirrüs kontaminasyonu filtrelendi.',
     ];
 
@@ -154,7 +154,7 @@ export class GeminiAnalyzer {
 
     return {
       overallStatus,
-      summary: `${parcelName} (${crop}, ${areaHa} ha) için ${dateFormatted} tarihli gerçek Sentinel-2 L2A analizi tamamlanmıştır. Ortalama NDVI seviyesi ${meanNdvi} ile kanopi canlılığı ölçülmüş olup, NDMI (${meanNdmi}) göstergesi ${isHighStress ? 'belirgin hidrik kısıta' : 'stabil neme'} işaret etmektedir. Fiziksel saha kontrolü ve sulama teyidi önerilmektedir.`,
+      summary: `${parcelName} (${crop}, ${areaHa} ha) için ${dateFormatted} tarihli gerçek Sentinel-2 L2A analizi tamamlanmıştır. Ortalama NDVI ${meanNdvi}, NDMI ${meanNdmi} olarak ölçülmüştür. ${isHighStress ? 'Spektral değerler olası hidrik kısıtla uyumludur.' : 'Tek gözlemden nem stabilitesi veya sulama durumu doğrulanamaz.'} Fiziksel saha kontrolü önerilmektedir.`,
       keyFindings,
       risks,
       positiveSignals,

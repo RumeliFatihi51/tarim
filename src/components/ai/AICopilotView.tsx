@@ -41,17 +41,15 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
     {
       id: 'welcome-1',
       role: 'assistant',
-      content: `Merhaba! Ben TerraSat MRV Uzaktan Algılama ve Spektral Analiz Asistanıyım. ${activeParcel.name} (${activeParcel.id}) parseli veya portföyünüzdeki 2.481 parsel için Sentinel-2 Level-2A spektral indeksleri, su stresi, anız yakma riski ve MRV denetim kanıtları hakkında sorularınızı yanıtlayabilirim.`,
+      content: `Merhaba! Ben TerraSat MRV Uzaktan Algılama Asistanıyım. Yalnızca tamamlanmış analizlerden getirilen kanıtları yorumlarım; ölçüm yoksa sonuç üretmem.`,
       timestamp: 'Şimdi',
       structured: {
-        answer: `${activeParcel.name} parseli seçili durumdadır. Güncel NDVI ${activeParcel.ndvi.toFixed(2)}, NDWI ${activeParcel.ndwi.toFixed(2)}, NDMI ${(activeParcel.ndmi ?? 0.18).toFixed(2)}.`,
+        answer: `${activeParcel.name} parseli seçili. Güncel kanıtı görmek için kayıtlı analizi sorgulayın.`,
         evidence: [
-          `Sentinel-2 MSI L2A BOA Yüzey Yansıması`,
-          `Gözlem Tarihi: ${activeParcel.lastObservation || '08 Eylül 2026'}`,
-          `Sürdürülebilirlik Skoru: ${activeParcel.sustainabilityScore}/100`,
+          `Başlangıç mesajı ölçüm iddiası içermez.`,
         ],
-        interpretation: 'Optik ve yakın-kızılötesi bantlar parselin genel vejetasyon sıklığının iyi durumda olduğunu teyit etmektedir.',
-        confidence: 'High',
+        interpretation: 'Analiz sonucu bekleniyor.',
+        confidence: 'Low',
         limitations: [
           '10m optik piksel boyutu taç küre ortalamasını temsil eder.',
           'Bulutlu günlerde Sentinel-2 optik gözlem yapılamaz.',
@@ -113,23 +111,18 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
       const botMessage: AIChatMessage = await response.json();
       setMessages((prev) => [...prev, botMessage]);
     } catch (err: any) {
-      // Local fallback if network fails
       const fallbackMessage: AIChatMessage = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: `${activeParcel.name} (${activeParcel.id}) için analiz tamamlandı. Güncel NDVI ${activeParcel.ndvi.toFixed(2)}, NDWI ${activeParcel.ndwi.toFixed(2)}, genel sağlık durumu '${activeParcel.status}'.`,
+        content: `AI servisine erişilemedi. Kanıt olmadan yerel bir analiz sonucu üretilmedi.`,
         timestamp: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }),
         structured: {
-          answer: `${activeParcel.name} için Sentinel-2 Level-2A spektral göstergeleri stabil seyrini sürdürmektedir.`,
-          evidence: [
-            `Sensör: Sentinel-2 MSI L2A (10m)`,
-            `Gözlem: ${activeParcel.lastObservation || '08 Eylül 2026'}`,
-            `Bitki Sağlığı: ${activeParcel.plantHealth}`,
-          ],
-          interpretation: 'Bant oranları fotosentetik aktivitenin mevsim normalleriyle uyumlu olduğunu teyit eder.',
-          confidence: 'High',
-          limitations: ['Yeraltı kök derinliği doğrudan optik sensörle ölçülemez.'],
-          recommendedAction: 'Saha denetim ekipleri manometrik basınç testini tamamlamalıdır.',
+          answer: 'Service unavailable',
+          evidence: [],
+          interpretation: 'No inference was generated.',
+          confidence: 'Low',
+          limitations: [err instanceof Error ? err.message : 'AI service unavailable'],
+          recommendedAction: 'Bağlantıyı kontrol edip tekrar deneyin.',
         },
         actions: [
           { type: 'OPEN_PARCEL', parcelId: activeParcel.id, label: 'Parseli Haritada İncele' },
@@ -197,7 +190,7 @@ export const AICopilotView: React.FC<AICopilotViewProps> = ({
             </div>
             <div className="bg-slate-950/60 p-1.5 rounded-lg border border-slate-800">
               <span className="text-[9px] text-slate-400 block">NDMI</span>
-              <span className="text-xs font-mono font-bold text-cyan-400">{(activeParcel.ndmi ?? 0.18).toFixed(2)}</span>
+              <span className="text-xs font-mono font-bold text-cyan-400">{typeof activeParcel.ndmi === 'number' && Number.isFinite(activeParcel.ndmi) ? activeParcel.ndmi.toFixed(2) : '—'}</span>
             </div>
           </div>
         </div>

@@ -57,14 +57,14 @@ export const AnalysisResultView: React.FC<AnalysisResultViewProps> = ({
   const [imageLayer, setImageLayer] = useState<'rgb' | 'ndvi' | 'ndwi' | 'ndmi'>('ndvi');
 
   // Guaranteed safe numeric values to prevent any NaN rendering or crash
-  const ndviVal = typeof calculatedIndices?.ndvi === 'number' && !isNaN(calculatedIndices.ndvi) ? calculatedIndices.ndvi : 0.68;
-  const ndwiVal = typeof calculatedIndices?.ndwi === 'number' && !isNaN(calculatedIndices.ndwi) ? calculatedIndices.ndwi : 0.21;
-  const ndmiVal = typeof calculatedIndices?.ndmi === 'number' && !isNaN(calculatedIndices.ndmi) ? calculatedIndices.ndmi : 0.18;
-  const soilMoistureVal = typeof calculatedIndices?.soilMoisture === 'number' && !isNaN(calculatedIndices.soilMoisture) ? Math.round(calculatedIndices.soilMoisture) : 38;
-  const validPixelsCount = typeof pixelStats?.validPixels === 'number' && !isNaN(pixelStats.validPixels) ? pixelStats.validPixels : 462;
-  const totalPixelsCount = typeof pixelStats?.totalPixels === 'number' && !isNaN(pixelStats.totalPixels) ? pixelStats.totalPixels : 480;
-  const validRatioPercent = typeof pixelStats?.validPixelRatio === 'number' && !isNaN(pixelStats.validPixelRatio) ? (pixelStats.validPixelRatio * 100).toFixed(1) : '96.2';
-  const cloudRatioPercent = typeof pixelStats?.cloudMaskedRatio === 'number' && !isNaN(pixelStats.cloudMaskedRatio) ? (pixelStats.cloudMaskedRatio * 100).toFixed(1) : '3.8';
+  const ndviVal = typeof calculatedIndices?.ndvi === 'number' && !isNaN(calculatedIndices.ndvi) ? calculatedIndices.ndvi : Number.NaN;
+  const ndwiVal = typeof calculatedIndices?.ndwi === 'number' && !isNaN(calculatedIndices.ndwi) ? calculatedIndices.ndwi : Number.NaN;
+  const ndmiVal = typeof calculatedIndices?.ndmi === 'number' && !isNaN(calculatedIndices.ndmi) ? calculatedIndices.ndmi : Number.NaN;
+  const soilMoistureVal = typeof calculatedIndices?.soilMoisture === 'number' && !isNaN(calculatedIndices.soilMoisture) ? Math.round(calculatedIndices.soilMoisture) : Number.NaN;
+  const validPixelsCount = typeof pixelStats?.validPixels === 'number' && !isNaN(pixelStats.validPixels) ? pixelStats.validPixels : 0;
+  const totalPixelsCount = typeof pixelStats?.totalPixels === 'number' && !isNaN(pixelStats.totalPixels) ? pixelStats.totalPixels : 0;
+  const validRatioPercent = typeof pixelStats?.validPixelRatio === 'number' && !isNaN(pixelStats.validPixelRatio) ? (pixelStats.validPixelRatio * 100).toFixed(1) : '—';
+  const cloudRatioPercent = typeof pixelStats?.cloudMaskedRatio === 'number' && !isNaN(pixelStats.cloudMaskedRatio) ? (pixelStats.cloudMaskedRatio * 100).toFixed(1) : '—';
 
   // Select active raster image based on layer
   const activeRasterUrl = 

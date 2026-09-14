@@ -12,7 +12,9 @@ export class PracticeEngine {
     ndwiMean: number,
     ndmiMean: number,
     b11Reflectance: number,
-    observationDate: string
+    observationDate: string,
+    nbrMean?: number,
+    previousNbrMean?: number
   ): PracticeSignal[] {
     const signals: PracticeSignal[] = [];
 
@@ -23,13 +25,13 @@ export class PracticeEngine {
     let irrigationConfidence: 'High' | 'Medium' | 'Low' = 'Medium';
 
     if (ndmiMean >= 0.18 && ndwiMean >= -0.1) {
-      irrigationStatus = 'LIKELY_ACTIVE';
+      irrigationStatus = 'POSSIBLE_SIGNAL';
       irrigationEvidence = [
         `Sentinel-2 NDMI kanopi su indeksi (${ndmiMean.toFixed(2)}) yaz kuraklığı eşiğinin belirgin üzerinde.`,
         `SWIR (B11) yansıma değeri (${b11Reflectance.toFixed(3)}) yüksek yaprak içi turgor ve nem emilimi ile uyumlu.`,
         `Çevre nadas/kuru tarım parsellerine kıyasla +0.22 pozitif nem kontrastı.`,
       ];
-      irrigationConfidence = 'High';
+      irrigationConfidence = 'Medium';
     } else if (ndmiMean < -0.10) {
       irrigationStatus = 'LIKELY_INACTIVE';
       irrigationEvidence = [
@@ -50,7 +52,7 @@ export class PracticeEngine {
       type: 'IRRIGATION',
       title: 'Sulama Rejimi ve Hidrik Durum Sinyali',
       status: irrigationStatus,
-      evidenceLevel: 'DIRECT_SATELLITE',
+      evidenceLevel: 'MODEL_INFERRED',
       confidence: irrigationConfidence,
       evidence: irrigationEvidence,
       limitations: 'Optik ve SWIR uyduları kanopi üst yüzey nemini ölçer; toprak altı damlatıcı tıkanıklığı veya derin kök profili doğrudan görülemez.',
@@ -65,13 +67,18 @@ export class PracticeEngine {
     let burnEvidence: string[] = [];
     let burnConfidence: 'High' | 'Medium' | 'Low' = 'High';
 
-    if (ndviMean < 0.20 && b11Reflectance > 0.28) {
+    const nbrDrop = nbrMean !== undefined && previousNbrMean !== undefined ? previousNbrMean - nbrMean : undefined;
+    if (nbrMean !== undefined && nbrDrop !== undefined && nbrMean < 0.1 && nbrDrop > 0.2 && ndviMean < 0.25 && b11Reflectance > 0.2) {
       burnStatus = 'POSSIBLE_SIGNAL';
       burnEvidence = [
         `Düşük NDVI (${ndviMean.toFixed(2)}) ve yüksek SWIR yansıması (${b11Reflectance.toFixed(3)}) anız yanığı veya yoğun mekanik hasat sonrasını andırmaktadır.`,
         `Kül/kararma spektral ayrışımı için saha spektrometresi teyidi gerekir.`,
       ];
       burnConfidence = 'Medium';
+    } else if (nbrMean === undefined || nbrDrop === undefined) {
+      burnStatus = 'INSUFFICIENT_EVIDENCE';
+      burnConfidence = 'Low';
+      burnEvidence = ['NBR, B12 ve önceki tarihli karşılaştırılabilir bir gözlem olmadan yanma çıkarımı yapılamaz.'];
     } else {
       burnStatus = 'NO_SIGNAL';
       burnEvidence = [
@@ -90,7 +97,7 @@ export class PracticeEngine {
       evidence: burnEvidence,
       limitations: 'Yüksek sıcaklıkta kuru saman ile anız külü 10m çözünürlükte benzer spektral karışım sergileyebilir. Yanık kesinleşmesi için yerinde kül teyidi şarttır.',
       verificationRequirement: 'Jeo-etiketli saha fotoğrafı ve kül kalıntısı denetimi.',
-      verificationStatus: burnStatus === 'POSSIBLE_SIGNAL' ? 'SCHEDULED' : 'VERIFIED',
+      verificationStatus: 'PENDING',
       observationDate,
     });
 
@@ -99,12 +106,12 @@ export class PracticeEngine {
       id: `sig-till-${parcelId}`,
       type: 'TILLAGE',
       title: 'Toprak İşleme ve Yüzey Açıklığı',
-      status: ndviMean < 0.25 ? 'LIKELY_ACTIVE' : 'LIKELY_INACTIVE',
-      evidenceLevel: 'DIRECT_SATELLITE',
-      confidence: 'Medium',
+      status: 'INSUFFICIENT_EVIDENCE',
+      evidenceLevel: 'MODEL_INFERRED',
+      confidence: 'Low',
       evidence: [
         `Vejetasyon örtülülüğü %${Math.round(ndviMean * 100)} seviyesinde olup zemin yansıması spektrumu domine etmektedir.`,
-        `Toprak organik karbon koruma protokolü için koruyucu toprak işleme doğrulanmalıdır.`,
+        `Tek tarihli düşük NDVI toprak işlemeyi kanıtlamaz; fenoloji, hasat ve çıplak toprak aynı sinyali üretebilir.`,
       ],
       limitations: 'Taşlılık ve toprak rengi indeksi etkileyebilir.',
       verificationRequirement: 'Anız örtü yüzdesi (en az %30) saha cetvel ölçümü.',

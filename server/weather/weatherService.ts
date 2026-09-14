@@ -1,75 +1,49 @@
 import { WeatherData } from '../types';
+import { fetchWithTimeout } from '../http';
+import { AppError } from '../errors';
+
+interface OpenMeteoDaily {
+  time: string[]; temperature_2m_mean: number[]; temperature_2m_min: number[]; temperature_2m_max: number[];
+  precipitation_sum: number[]; relative_humidity_2m_mean: number[]; et0_fao_evapotranspiration: number[];
+  wind_speed_10m_max: number[];
+}
 
 export class WeatherService {
-  /**
-   * Retrieves agro-climatic environmental data and weather correlation for a given parcel and observation date.
-   */
-  getParcelWeatherData(parcelId: string, lat: number, lng: number, observationDateStr?: string): WeatherData {
-    const obsDate = observationDateStr ? new Date(observationDateStr) : new Date();
-    const month = obsDate.getMonth(); // 0 to 11
-
-    // Mediterranean / Aegean agro-climatic base profile for Western Turkey (Menemen / Gediz / İzmir plain)
-    // Summer (Jun-Aug) is arid with high ET0, Winter/Spring (Dec-May) has rainfall
-    const isSummer = month >= 5 && month <= 8;
-    const isSpring = month >= 2 && month <= 4;
-    const isAutumn = month >= 9 && month <= 10;
-
-    let tempC = 24.5;
-    let tempAnomaly = 1.2;
-    let rainMm = 12.4;
-    let rainAnomaly = -28.0;
-    let rh = 48;
-    let et0 = 5.6;
-    let droughtRisk: 'Low' | 'Moderate' | 'High' | 'Severe' = 'High';
-
-    if (isSummer) {
-      tempC = 33.2;
-      tempAnomaly = 2.1;
-      rainMm = 3.5;
-      rainAnomaly = -45.0;
-      rh = 38;
-      et0 = 7.2;
-      droughtRisk = 'Severe';
-    } else if (isSpring) {
-      tempC = 19.8;
-      tempAnomaly = 0.8;
-      rainMm = 46.0;
-      rainAnomaly = -12.0;
-      rh = 62;
-      et0 = 3.8;
-      droughtRisk = 'Moderate';
-    } else if (isAutumn) {
-      tempC = 22.1;
-      tempAnomaly = 1.4;
-      rainMm = 24.5;
-      rainAnomaly = -18.0;
-      rh = 54;
-      et0 = 4.2;
-      droughtRisk = 'Moderate';
-    } else {
-      tempC = 11.5;
-      tempAnomaly = 0.5;
-      rainMm = 78.0;
-      rainAnomaly = 5.0;
-      rh = 74;
-      et0 = 2.1;
-      droughtRisk = 'Low';
+  async getParcelWeatherData(parcelId: string, lat: number, lng: number, observationDateStr?: string): Promise<WeatherData> {
+    const parsedDate = observationDateStr ? new Date(observationDateStr) : new Date();
+    const date = Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+    const end = date.toISOString().slice(0, 10);
+    const startDate = new Date(date); startDate.setUTCDate(startDate.getUTCDate() - 29);
+    const start = startDate.toISOString().slice(0, 10);
+    const params = new URLSearchParams({
+      latitude: String(lat), longitude: String(lng), start_date: start, end_date: end,
+      daily: 'temperature_2m_mean,temperature_2m_min,temperature_2m_max,precipitation_sum,relative_humidity_2m_mean,et0_fao_evapotranspiration,wind_speed_10m_max',
+      timezone: 'UTC',
+    });
+    try {
+      const response = await fetchWithTimeout(`https://archive-api.open-meteo.com/v1/archive?${params}`);
+      if (!response.ok) throw new Error(`Open-Meteo returned ${response.status}`);
+      const payload = await response.json() as { daily?: OpenMeteoDaily; daily_units?: Record<string, string> };
+      const daily = payload.daily;
+      if (!daily?.time?.length) throw new Error('Open-Meteo returned no daily observations');
+      const mean = (values: number[]) => values.filter(Number.isFinite).reduce((sum, value) => sum + value, 0) / values.filter(Number.isFinite).length;
+      const sum = (values: number[]) => values.filter(Number.isFinite).reduce((total, value) => total + value, 0);
+      const rainfall = sum(daily.precipitation_sum);
+      const et0 = mean(daily.et0_fao_evapotranspiration);
+      const droughtRisk: WeatherData['droughtRiskIndex'] = rainfall < 10 && et0 > 5 ? 'Severe' : rainfall < 25 ? 'High' : rainfall < 50 ? 'Moderate' : 'Low';
+      return {
+        parcelId, period: `${start}/${end}`, temperatureC: Number(mean(daily.temperature_2m_mean).toFixed(1)),
+        rainfallMm: Number(rainfall.toFixed(1)), relativeHumidityPercent: Math.round(mean(daily.relative_humidity_2m_mean)),
+        et0MmPerDay: Number(et0.toFixed(1)), droughtRiskIndex: droughtRisk,
+        correlationSummary: 'Meteorological context is reported independently. No NDVI–rainfall correlation is claimed unless a paired time-series calculation is available.',
+        tempMinC: Number(Math.min(...daily.temperature_2m_min).toFixed(1)), tempMaxC: Number(Math.max(...daily.temperature_2m_max).toFixed(1)),
+        windSpeedKmh: Number(Math.max(...daily.wind_speed_10m_max).toFixed(1)), observationDate: end,
+        provider: 'Open-Meteo Historical Weather API', dataSource: 'Open-Meteo', fetchedAt: new Date().toISOString(),
+        location: { lat, lng }, units: payload.daily_units || {}, dataFreshness: `Fetched ${new Date().toISOString()}`,
+      };
+    } catch (error) {
+      throw new AppError('WEATHER_PROVIDER_ERROR', `Weather data unavailable: ${error instanceof Error ? error.message : String(error)}`, 502);
     }
-
-    const periodStr = `${obsDate.getFullYear()}-${(month + 1).toString().padStart(2, '0')}`;
-
-    return {
-      parcelId,
-      period: periodStr,
-      temperatureC: parseFloat(tempC.toFixed(1)),
-      temperatureAnomalyC: parseFloat(tempAnomaly.toFixed(1)),
-      rainfallMm: parseFloat(rainMm.toFixed(1)),
-      rainfallAnomalyPercent: parseFloat(rainAnomaly.toFixed(1)),
-      relativeHumidityPercent: Math.round(rh),
-      et0MmPerDay: parseFloat(et0.toFixed(1)),
-      droughtRiskIndex: droughtRisk,
-      correlationSummary: `Gözlenen dönemde yağış uzun yıllar ortalamasının %${Math.abs(rainAnomaly)} altında, referans buharlaşma-terleme (ET0: ${et0} mm/gün) seviyesindedir. Kanopi su indeksi (NDMI) gerilemesi meteorolojik kuraklık anomalisiyle güçlü korelasyon göstermektedir. Ancak uzaktan algılama korelasyonu tek başına yetersiz olup, sulama debimetresi ve toprak TDR ölçümleri ile doğrulanmalıdır.`,
-    };
   }
 }
 

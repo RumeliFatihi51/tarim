@@ -1,7 +1,10 @@
+import './server/config';
 import express from 'express';
 import path from 'path';
-import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
+import crypto from 'crypto';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
 import { defaultSatelliteProvider } from './server/providers/satelliteProvider';
 import { normalizePolygon, getPolygonBBox, calculatePolygonAreaHa } from './server/processing/geometryUtils';
@@ -15,16 +18,24 @@ import { defaultWeatherService } from './server/weather/weatherService';
 import { defaultPracticeEngine } from './server/practices/practiceEngine';
 import { WINDOWS_APP_INFO, generateWindowsExeBuffer, generatePortableWindowsZipBuffer } from './server/desktop/exeService';
 import { INITIAL_PARCELS } from './src/data/parcels';
-
-dotenv.config();
+import { config } from './server/config';
+import { authenticate, errorHandler, requestContext, type AuthenticatedRequest } from './server/middleware';
+import { rankScenes, validateSceneAssets } from './server/providers/sceneSelection';
+import { validateAnalysisRequest } from './server/validation';
+import { analysisStore } from './server/persistence/analysisStore';
+import { getDemoAnalysisPayload } from './src/demo/sampleData';
+import type { FullAnalysisPayload, RiskStatus, WaterStressLevel, PlantHealthLevel, CarbonIndicatorTrend } from './src/types';
+import { renderMrvPdf } from './server/mrv/pdfReport';
+import { artifactStore } from './server/persistence/artifactStore';
 
 const app = express();
-const PORT = 3000;
+const PORT = config.PORT;
 
-app.use(express.json({ limit: '10mb' }));
-
-// In-memory cache for processed parcel analyses
-const analysisCache = new Map<string, any>();
+app.use(requestContext);
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cors({ origin: config.CORS_ORIGINS.split(',').map((origin) => origin.trim()), credentials: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use('/api', rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: true, legacyHeaders: false }));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -34,9 +45,11 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     provider: defaultSatelliteProvider.name,
     geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
-    cacheSize: analysisCache.size,
+    cache: 'persistent-versioned',
   });
 });
+
+app.use('/api', authenticate);
 
 // Scene metadata query for coordinates
 app.get('/api/satellite/query-scene', async (req, res) => {
@@ -87,9 +100,12 @@ async function executeFullPipeline(
     location?: string;
     isDemo?: boolean;
     jobId?: string;
+    companyId?: string;
   }
 ) {
-  const { polygonInput, parcelId = 'custom-parcel', name = 'İncelenen Parsel', crop = 'Zeytin', location = 'Ege / Türkiye', isDemo = false, jobId } = params;
+  const { polygonInput, parcelId = 'custom-parcel', name = 'İncelenen Parsel', crop = 'Zeytin', location = 'Ege / Türkiye', isDemo = false, jobId, companyId = 'local-dev' } = params;
+
+  if (isDemo) return getDemoAnalysisPayload(parcelId);
 
   const updateStage = (stageNum: number, status: 'running' | 'completed' | 'failed', detail?: string) => {
     if (jobId) {
@@ -114,8 +130,11 @@ async function executeFullPipeline(
 
   // 3. Select best observation
   updateStage(3, 'running', 'En düşük bulutluluklu güncel gözlem seçiliyor...');
-  const bestScene = scenes[0];
-  updateStage(3, 'completed', `Sahne: ${bestScene.id} (Bulut: %${bestScene.cloudCoverPercent})`);
+  const candidateScenes = rankScenes(scenes).slice(0, 3);
+  if (!candidateScenes.length) throw new Error('Gerekli tüm bantlara sahip Sentinel-2 sahnesi bulunamadı.');
+  candidateScenes.forEach(validateSceneAssets);
+  let bestScene = candidateScenes[0];
+  updateStage(3, 'running', `${candidateScenes.length} aday sahne poligon içi SCL kalitesiyle karşılaştırılıyor`);
 
   // 4. Access satellite COG bands
   updateStage(4, 'running', 'Level-2A 10m/20m Cloud-Optimized GeoTIFF bantlarına bağlanılıyor...');
@@ -126,12 +145,17 @@ async function executeFullPipeline(
   updateStage(6, 'running', 'Raster piksel matrisi poligon sınırına kırpılıyor...');
   updateStage(7, 'running', 'B02, B03, B04, B08, B11 BOA yüzey yansıması okunuyor...');
 
-  const rasterResult = await defaultRasterProcessor.processParcelRaster(
-    bestScene,
-    polygon,
-    defaultSatelliteProvider,
-    isDemo
-  );
+  const processedCandidates = [];
+  for (const candidate of candidateScenes) {
+    try { processedCandidates.push(await defaultRasterProcessor.processParcelRaster(candidate, polygon, defaultSatelliteProvider, false)); }
+    catch (error) { console.warn(`[SCENE] Candidate ${candidate.id} rejected: ${error instanceof Error ? error.message : String(error)}`); }
+  }
+  if (!processedCandidates.length) throw new Error('Aday sahnelerin hiçbirinde yeterli geçerli poligon pikseli bulunamadı.');
+  const qualityScore = (candidate: typeof processedCandidates[number]) => candidate.pixelStats.validPixelRatio - candidate.pixelStats.cloudMaskedRatio - (candidate.pixelStats.shadowRatio || 0) - (candidate.pixelStats.noDataRatio || 0);
+  processedCandidates.sort((a, b) => qualityScore(b) - qualityScore(a));
+  const rasterResult = processedCandidates[0];
+  bestScene = rasterResult.scene;
+  updateStage(3, 'completed', `Poligon içi kaliteye göre sahne: ${bestScene.id}; geçerli piksel %${(rasterResult.pixelStats.validPixelRatio * 100).toFixed(1)}`);
 
   updateStage(5, 'completed', `Bulut maskelenen piksel oranı: %${(rasterResult.pixelStats.cloudMaskedRatio * 100).toFixed(1)}`);
   updateStage(6, 'completed', `Toplam geçerli optik piksel: ${rasterResult.pixelStats.validPixels}`);
@@ -191,13 +215,13 @@ async function executeFullPipeline(
   );
   updateStage(14, 'completed', `Rapor ID: ${fullMRVReport.reportId}`);
 
-  const safeNdviMean = typeof rasterResult.indices.ndvi.mean === 'number' && !isNaN(rasterResult.indices.ndvi.mean) ? rasterResult.indices.ndvi.mean : 0.68;
-  const safeNdwiMean = typeof rasterResult.indices.ndwi.mean === 'number' && !isNaN(rasterResult.indices.ndwi.mean) ? rasterResult.indices.ndwi.mean : 0.21;
-  const safeNdmiMean = typeof rasterResult.indices.ndmi.mean === 'number' && !isNaN(rasterResult.indices.ndmi.mean) ? rasterResult.indices.ndmi.mean : 0.18;
-  const safeMoisture = typeof rasterResult.derivedMoistureProxy.estimatedMoistureScore === 'number' && !isNaN(rasterResult.derivedMoistureProxy.estimatedMoistureScore) ? rasterResult.derivedMoistureProxy.estimatedMoistureScore : 38;
+  const safeNdviMean = rasterResult.indices.ndvi.mean;
+  const safeNdwiMean = rasterResult.indices.ndwi.mean;
+  const safeNdmiMean = rasterResult.indices.ndmi.mean;
+  const safeMoisture = rasterResult.derivedMoistureProxy.estimatedMoistureScore;
 
   // Environmental Weather and Practice Signals
-  const weatherData = defaultWeatherService.getParcelWeatherData(
+  const weatherData = await defaultWeatherService.getParcelWeatherData(
     parcelId,
     polygon.coordinates[0][0][1],
     polygon.coordinates[0][0][0],
@@ -211,13 +235,28 @@ async function executeFullPipeline(
     safeNdwiMean,
     safeNdmiMean,
     rasterResult.reflectances.B11,
-    latestDateStr
+    latestDateStr,
+    rasterResult.indices.nbr.mean,
+    timeSeries.length > 1 ? timeSeries[timeSeries.length - 2].nbr : undefined,
   );
 
   const verificationTasks = defaultPracticeEngine.generateVerificationTasks(parcelId, crop);
 
+  const visualizationFields = ['rgbPngBase64', 'ndviPngBase64', 'ndwiPngBase64', 'ndmiPngBase64', 'stressPngBase64'] as const;
+  for (const field of visualizationFields) {
+    const dataUrl = rasterResult.visualizations[field];
+    if (!dataUrl?.startsWith('data:image/png;base64,')) continue;
+    const storageKey = `${companyId}/${parcelId}/${bestScene.id.replace(/[^a-zA-Z0-9_-]/g, '_')}/${field}-${crypto.randomUUID()}.png`;
+    await artifactStore.put(storageKey, Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64'));
+    rasterResult.visualizations[field] = `/api/artifacts/${storageKey}`;
+  }
+
   // Construct complete payload matching FullAnalysisPayload
-  const fullPayload = {
+  const waterStress: WaterStressLevel = safeNdmiMean < -0.1 ? 'High' : safeNdmiMean < 0.1 ? 'Medium' : 'Low';
+  const plantHealth: PlantHealthLevel = safeNdviMean > 0.5 ? 'Good' : safeNdviMean > 0.3 ? 'Moderate' : 'Poor';
+  const carbonIndicator: CarbonIndicatorTrend = 'Unavailable';
+  const riskStatus: RiskStatus = safeNdmiMean < -0.1 ? 'high-risk' : safeNdviMean < 0.35 ? 'moderate' : 'healthy';
+  const fullPayload: FullAnalysisPayload = {
     parcel: {
       id: parcelId,
       number: `#${parcelId.slice(-6).toUpperCase()}`,
@@ -225,27 +264,18 @@ async function executeFullPipeline(
       location,
       crop,
       areaHa,
-      status: safeNdmiMean < -0.1 ? 'high-risk' : safeNdviMean < 0.35 ? 'moderate' : 'healthy',
-      sustainabilityScore: Math.round(
-        Math.max(30, Math.min(96, safeNdviMean * 80 + (safeNdmiMean + 0.2) * 45))
-      ),
-      scoreBreakdown: {
-        vegetation: Math.round(safeNdviMean * 100),
-        water: Math.round(Math.max(20, Math.min(95, ((safeNdmiMean + 0.2) / 0.6) * 100))),
-        soil: 75,
-        carbon: Math.round(Math.max(30, Math.min(95, safeNdviMean * 95))),
-        management: 80,
-      },
+      status: riskStatus,
       ndvi: safeNdviMean,
       ndwi: safeNdwiMean,
+      ndmi: safeNdmiMean,
       soilMoisture: safeMoisture,
-      waterStress: (safeNdmiMean < -0.1 ? 'High' : safeNdmiMean < 0.1 ? 'Medium' : 'Low') as any,
-      plantHealth: (safeNdviMean > 0.5 ? 'Good' : safeNdviMean > 0.3 ? 'Moderate' : 'Poor') as any,
-      carbonIndicator: (safeNdviMean > 0.4 ? 'Positive' : 'Stable') as any,
+      waterStress,
+      plantHealth,
+      carbonIndicator,
       lastObservation: latestDateStr,
       polygon: polygon.coordinates[0].map(([lng, lat]) => [lat, lng]),
       historicalData: timeSeries,
-      isDemo: false,
+      isDemo,
     },
     satelliteMetadata: {
       sensor: `${bestScene.platform} MSI (Level-2A BOA)`,
@@ -256,7 +286,7 @@ async function executeFullPipeline(
       cloudScreeningPassed: true,
       spatialResolutionMeters: 10,
       processingLevel: 'L2A (Bottom of Atmosphere Surface Reflectance)',
-      bandsUsed: ['B02 (490nm)', 'B03 (560nm)', 'B04 (665nm)', 'B08 (842nm)', 'B11 (1610nm)'],
+      bandsUsed: ['B02 (490nm)', 'B03 (560nm)', 'B04 (665nm)', 'B08 (842nm)', 'B11 (1610nm)', 'B12 (2190nm)'],
       dataSource: bestScene.provider,
     },
     spectralBands: rasterResult.reflectances,
@@ -267,9 +297,9 @@ async function executeFullPipeline(
       ndwiTrend: 0.0,
       ndmi: safeNdmiMean,
       soilMoisture: safeMoisture,
-      waterStress: (safeNdmiMean < -0.1 ? 'High' : safeNdmiMean < 0.1 ? 'Medium' : 'Low') as any,
-      plantHealth: (safeNdviMean > 0.5 ? 'Good' : safeNdviMean > 0.3 ? 'Moderate' : 'Poor') as any,
-      carbonIndicator: (safeNdviMean > 0.4 ? 'Positive' : 'Stable') as any,
+      waterStress,
+      plantHealth,
+      carbonIndicator,
     },
     pixelStats: rasterResult.pixelStats,
     spectralStats: rasterResult.indices,
@@ -286,6 +316,7 @@ async function executeFullPipeline(
     mrvReport: fullMRVReport,
   };
 
+  analysisStore.save(companyId, fullPayload);
   return fullPayload;
 }
 
@@ -300,7 +331,7 @@ app.post('/api/ai/chat', async (req, res) => {
     const aiResponse = await defaultAssistantService.processUserMessage(
       message,
       history,
-      { activeParcelId }
+      { activeParcelId, companyId: (req as AuthenticatedRequest).auth?.companyId }
     );
 
     res.json(aiResponse);
@@ -326,12 +357,43 @@ app.get('/api/parcels', (req, res) => {
   });
 });
 
+app.get('/api/reports', (req: AuthenticatedRequest, res) => {
+  const companyId = req.auth?.companyId || 'local-dev';
+  res.json(analysisStore.list(companyId).filter((analysis) => analysis.mrvReport).map((analysis) => analysis.mrvReport));
+});
+
+app.get('/api/reports/:parcelId/pdf', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const companyId = req.auth?.companyId || 'local-dev';
+    const analysis = analysisStore.get(companyId, req.params.parcelId);
+    if (!analysis?.mrvReport) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'MRV report not found' } });
+    const { buffer, sha256 } = await renderMrvPdf(analysis.mrvReport as Record<string, unknown>);
+    await artifactStore.put(`${companyId}/${req.params.parcelId}/${crypto.randomUUID()}.pdf`, buffer);
+    res.setHeader('content-type', 'application/pdf');
+    res.setHeader('content-disposition', `attachment; filename="${req.params.parcelId}-mrv.pdf"`);
+    res.setHeader('x-content-sha256', sha256);
+    res.send(buffer);
+  } catch (error) { next(error); }
+});
+
+app.get('/api/artifacts/*', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const storageKey = req.params[0];
+    const companyId = req.auth?.companyId || 'local-dev';
+    if (!storageKey.startsWith(`${companyId}/`)) return res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Cross-tenant artifact access denied' } });
+    const buffer = await artifactStore.get(storageKey);
+    res.type(path.extname(storageKey)).send(buffer);
+  } catch (error) { next(error); }
+});
+
 // Parcel agro-climatic weather endpoint
-app.get('/api/weather/:parcelId', (req, res) => {
+app.get('/api/weather/:parcelId', async (req, res, next) => {
+  try {
   const { parcelId } = req.params;
   const parcel = INITIAL_PARCELS.find((p) => p.id === parcelId) || INITIAL_PARCELS[0];
-  const weather = defaultWeatherService.getParcelWeatherData(parcel.id, 38.6, 27.0, parcel.lastObservation || parcel.lastUpdated);
+  const weather = await defaultWeatherService.getParcelWeatherData(parcel.id, 38.6, 27.0, parcel.lastObservation || parcel.lastUpdated);
   res.json(weather);
+  } catch (error) { next(error); }
 });
 
 // Agricultural practice signals endpoint
@@ -450,22 +512,25 @@ app.get('/api/desktop/download-portable', (req, res) => {
 app.post('/api/satellite/start-job', async (req, res) => {
   try {
     const { polygon, coordinates, parcelId, name, crop, location, isDemo = false } = req.body;
-    const jobId = `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const polyInput = polygon || coordinates;
+    const normalized = normalizePolygon(polyInput);
+    const request = validateAnalysisRequest({ parcelId, name, crop, location, mode: isDemo ? 'DEMO' : 'LIVE', polygon: normalized });
+    const jobId = crypto.randomUUID();
     
     defaultJobManager.createJob(jobId, isDemo ? 'DEMO' : 'LIVE');
 
     // Run pipeline asynchronously in background
     (async () => {
       try {
-        const polyInput = polygon || coordinates;
         const result = await executeFullPipeline({
-          polygonInput: polyInput,
+          polygonInput: request.polygon,
           parcelId,
           name,
           crop,
           location,
           isDemo,
           jobId,
+          companyId: (req as AuthenticatedRequest).auth?.companyId,
         });
         defaultJobManager.completeJob(jobId, result);
       } catch (err: any) {
@@ -539,23 +604,17 @@ app.post('/api/satellite/analyze', async (req, res) => {
     } = req.body;
 
     const polyInput = polygon || coordinates;
-    const cacheKey = `${parcelId || 'custom'}_${crop || 'crop'}_${isDemo ? 'demo' : 'live'}`;
-
-    if (!forceFresh && analysisCache.has(cacheKey)) {
-      console.log(`[API] Returning cached result for ${cacheKey}`);
-      return res.json(analysisCache.get(cacheKey));
-    }
-
+    const request = validateAnalysisRequest({ parcelId, name, crop, location, mode: isDemo ? 'DEMO' : 'LIVE', polygon: normalizePolygon(polyInput), forceFresh });
     const payload = await executeFullPipeline({
-      polygonInput: polyInput,
+      polygonInput: request.polygon,
       parcelId,
       name,
       crop,
       location,
       isDemo,
+      companyId: (req as AuthenticatedRequest).auth?.companyId,
     });
 
-    analysisCache.set(cacheKey, payload);
     res.json(payload);
   } catch (err: any) {
     console.error('[API] Analysis error:', err);
@@ -571,13 +630,14 @@ app.post('/api/analyze', (req, res, next) => {
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(process.env.APP_ROOT || process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
@@ -592,9 +652,11 @@ async function startServer() {
   }
 }
 
-if (!process.env.VERCEL) {
+if (!process.env.VERCEL && config.NODE_ENV !== 'test') {
   startServer();
 }
+
+app.use(errorHandler);
 
 export default app;
 export { app };

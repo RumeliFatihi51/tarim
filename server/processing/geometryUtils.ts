@@ -6,19 +6,7 @@ import { GeoPolygon } from '../types';
  */
 export function normalizePolygon(input: any): GeoPolygon {
   if (!input) {
-    // Default fallback polygon (Emiralem Olive Grove, Menemen)
-    return {
-      type: 'Polygon',
-      coordinates: [
-        [
-          [27.1160, 38.6405],
-          [27.1215, 38.6410],
-          [27.1205, 38.6445],
-          [27.1155, 38.6435],
-          [27.1160, 38.6405],
-        ],
-      ],
-    };
+    throw new Error('Geçersiz poligon geometrisi: polygon zorunludur.');
   }
 
   // If already GeoJSON Polygon
@@ -26,12 +14,21 @@ export function normalizePolygon(input: any): GeoPolygon {
     const ring = input.coordinates[0];
     if (ring && ring.length >= 3) {
       // Ensure closed ring
-      const first = ring[0];
-      const last = ring[ring.length - 1];
+      const normalizedRing = ring.map((point: unknown) => {
+        if (!Array.isArray(point) || point.length < 2 || !Number.isFinite(Number(point[0])) || !Number.isFinite(Number(point[1]))) {
+          throw new Error('Geçersiz poligon koordinatı.');
+        }
+        const lng = Number(point[0]);
+        const lat = Number(point[1]);
+        if (lng < -180 || lng > 180 || lat < -90 || lat > 90) throw new Error('Poligon koordinatı WGS84 sınırları dışında.');
+        return [lng, lat] as [number, number];
+      });
+      const first = normalizedRing[0];
+      const last = normalizedRing[normalizedRing.length - 1];
       if (first[0] !== last[0] || first[1] !== last[1]) {
-        ring.push([...first]);
+        normalizedRing.push([...first]);
       }
-      return input as GeoPolygon;
+      return { type: 'Polygon', coordinates: [normalizedRing] };
     }
   }
 

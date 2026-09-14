@@ -67,13 +67,13 @@ export const WindowsTitleBar: React.FC<WindowsTitleBarProps> = ({
         {/* Center: System Telemetry Pill */}
         <div className="hidden md:flex items-center gap-3 text-[11px] font-mono text-slate-400 bg-black/40 px-3 py-1 rounded-full border border-white/[0.05]">
           <div className="flex items-center gap-1.5 text-emerald-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>DirectX 12 GPU Accl: Aktif</span>
+            <span className="w-2 h-2 rounded-full bg-slate-500" />
+            <span>GPU telemetrisi: kullanılamıyor</span>
           </div>
           <span className="text-slate-600">|</span>
-          <span>RAM: 1.84 / 16 GB</span>
+          <span>RAM: kullanılamıyor</span>
           <span className="text-slate-600">|</span>
-          <span>CPU: 12%</span>
+          <span>CPU: kullanılamıyor</span>
         </div>
 
         {/* Right: EXE Download action & Windows Standard Window Controls */}

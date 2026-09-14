@@ -135,7 +135,7 @@ export const SelectedParcelCard: React.FC<SelectedParcelCardProps> = ({
           </span>
           <div className="min-w-0">
             <h4 className="text-xs font-bold text-white truncate">{parcel.name}</h4>
-            <span className="text-[10px] text-slate-400 font-mono">{parcel.areaHa} ha • NDVI: {parcel.ndvi}</span>
+            <span className="text-[10px] text-slate-400 font-mono">{parcel.areaHa} ha • NDVI: {Number.isFinite(parcel.ndvi) ? parcel.ndvi : '—'}</span>
           </div>
         </div>
 
@@ -250,13 +250,13 @@ export const SelectedParcelCard: React.FC<SelectedParcelCardProps> = ({
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="p-2 rounded-xl bg-slate-900/60 border border-slate-800">
               <span className="text-[9px] text-slate-400 uppercase block">NDVI</span>
-              <span className="text-xs font-bold font-mono text-emerald-400">{parcel.ndvi}</span>
+              <span className="text-xs font-bold font-mono text-emerald-400">{Number.isFinite(parcel.ndvi) ? parcel.ndvi : '—'}</span>
               <span className="text-[9px] text-slate-500 block">Bitki Gücü</span>
             </div>
 
             <div className="p-2 rounded-xl bg-slate-900/60 border border-slate-800">
               <span className="text-[9px] text-slate-400 uppercase block">NDWI</span>
-              <span className="text-xs font-bold font-mono text-cyan-400">{parcel.ndwi}</span>
+              <span className="text-xs font-bold font-mono text-cyan-400">{Number.isFinite(parcel.ndwi) ? parcel.ndwi : '—'}</span>
               <span className="text-[9px] text-slate-500 block">Su Katsayısı</span>
             </div>
 

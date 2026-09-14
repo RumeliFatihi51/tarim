@@ -38,45 +38,13 @@ export const PracticesView: React.FC<PracticesViewProps> = ({
   onOpenReport,
 }) => {
   const activeParcel = selectedParcel || parcels[0];
-  const [tasks, setTasks] = useState<FieldVerificationTask[]>([
-    {
-      id: `task-01-${activeParcel.id}`,
-      title: 'Damla Sulama Basınç & Debimetre Kontrolü',
-      category: 'irrigation',
-      description: 'Lateral damlatıcı uçlarında manometre basınç testi ve debi ölçümü.',
-      priority: 'high',
-      status: 'pending',
-      assignedTo: 'Ahmet Ç. (Saha Denetmeni)',
-    },
-    {
-      id: `task-02-${activeParcel.id}`,
-      title: 'Hasat Sonrası Toprak Koruma & Anız Cetvel Ölçümü',
-      category: 'soil',
-      description: '5 farklı rastgele noktada 1m hat üzerinde kalan anız/sap örtüsü tespiti (%30 eşik).',
-      priority: 'medium',
-      status: 'completed',
-      assignedTo: 'Fatma K. (Ziraat Müh.)',
-      notes: 'Anız örtüsü ortalama %42 olarak ölçüldü, mevzuata uygun.',
-      completedAt: '09 Eylül 2026',
-    },
-    {
-      id: `task-03-${activeParcel.id}`,
-      title: '0-30 cm TDR Nem ve Tuzluluk Probu Ölçümü',
-      category: 'canopy',
-      description: 'Zeytinlik taç izdüşümünde nem sensörü kalibrasyonu.',
-      priority: 'low',
-      status: 'in_progress',
-      assignedTo: 'Murat S. (Tekniker)',
-    },
-  ]);
+  const [tasks, setTasks] = useState<FieldVerificationTask[]>([]);
 
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [practiceSignals, setPracticeSignals] = useState<PracticeSignal[]>([]);
   const [taskFilter, setTaskFilter] = useState<'all' | 'pending' | 'completed'>('all');
   const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [taskPhotos, setTaskPhotos] = useState<Record<string, string>>({
-    [`task-02-${activeParcel.id}`]: 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=300&auto=format&fit=crop&q=80',
-  });
+  const [taskPhotos, setTaskPhotos] = useState<Record<string, string>>({});
 
   const handleCapturePhoto = (taskId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -95,24 +63,7 @@ export const PracticesView: React.FC<PracticesViewProps> = ({
     fetch(`/api/weather/${activeParcel.id}`)
       .then((res) => res.json())
       .then((data) => setWeatherData(data))
-      .catch(() => {
-        // Fallback default
-        setWeatherData({
-          parcelId: activeParcel.id,
-          observationDate: activeParcel.lastObservation || '08 Eylül 2026',
-          temperatureC: 29.4,
-          tempMaxC: 34.2,
-          tempMinC: 18.6,
-          relativeHumidityPercent: 42,
-          precipitationMm: 0.0,
-          rainfallAnomalyPercent: -78.4,
-          windSpeedKmh: 14.2,
-          et0MmPerDay: 6.8,
-          soilTemperatureC: 26.5,
-          droughtStressCategory: 'Moderate Drought',
-          dataSource: 'ECMWF ERA5 / NASA POWER Agrometeorology',
-        });
-      });
+      .catch(() => setWeatherData(null));
 
     fetch(`/api/practices/${activeParcel.id}`)
       .then((res) => res.json())
@@ -126,35 +77,7 @@ export const PracticesView: React.FC<PracticesViewProps> = ({
           });
         }
       })
-      .catch(() => {
-        // Fallback practices
-        setPracticeSignals([
-          {
-            practiceType: 'irrigation',
-            practiceName: 'Yüksek Verimli Damla Sulama Rejimi',
-            detectedStatus: 'Compliant',
-            confidence: 94,
-            spectralEvidence: `Sentinel-2 NDMI: ${(activeParcel.ndmi ?? 0.18).toFixed(2)}, Yüksek yaz buharlaşmasına rağmen kanopi su içeriği korunuyor.`,
-            mrvAuditImpact: 'Damlama sistemi teyit edildiğinde su tüketim katsayısı %40 daha düşük hesaplanır.',
-          },
-          {
-            practiceType: 'residue_burning',
-            practiceName: 'Anız Yakma Yasağı Denetimi',
-            detectedStatus: 'Compliant',
-            confidence: 98,
-            spectralEvidence: 'SWIR (B11) ve NBR termal izleri zemin yanığı göstermemektedir.',
-            mrvAuditImpact: 'Sıfır anız yakma cezası, GHG Scope 1 CH4/N2O emisyonundan muafiyet.',
-          },
-          {
-            practiceType: 'tillage',
-            practiceName: 'Azaltılmış / Koruyucu Toprak İşleme',
-            detectedStatus: 'Compliant',
-            confidence: 88,
-            spectralEvidence: 'Zemin yansıma heterojenliği yüzeyde organik örtü varlığını desteklemektedir.',
-            mrvAuditImpact: 'Toprak organik karbonu (SOC) koruma primi.',
-          },
-        ]);
-      });
+      .catch(() => setPracticeSignals([]));
   }, [activeParcel.id]);
 
   const handleToggleTaskStatus = (taskId: string) => {

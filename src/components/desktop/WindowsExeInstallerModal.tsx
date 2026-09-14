@@ -99,7 +99,7 @@ export const WindowsExeInstallerModal: React.FC<WindowsExeInstallerModalProps> =
               {/* Verified Badge */}
               <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-[11px] flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>SHA-256 İmzalı & Windows 11 Uyumlu</span>
+                <span>Build artifact SHA-256 ile doğrulanır</span>
               </div>
             </div>
 

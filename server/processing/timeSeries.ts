@@ -2,15 +2,22 @@ import { GeoPolygon, TimeSeriesObservation, SatelliteScene } from '../types';
 import { ISatelliteProvider } from '../providers/satelliteProvider';
 import { getPolygonBBox } from './geometryUtils';
 import { defaultRasterProcessor } from './rasterProcessor';
+import { PersistentCache } from '../persistence/cache';
+import { ALGORITHM_VERSION } from './spectralIndices';
 
 // In-memory cache for processed historical scene observations
-const historicalSceneCache = new Map<string, {
+const historicalSceneCache = new PersistentCache();
+type HistoricalCacheEntry = {
   ndvi: number;
   ndwi: number;
   ndmi: number;
   validPixelRatio: number;
   cloudCover: number;
-}>();
+};
+
+export function sortScenesChronologically(scenes: SatelliteScene[]): SatelliteScene[] {
+  return [...scenes].sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+}
 
 export class TimeSeriesEngine {
   /**
@@ -43,28 +50,17 @@ export class TimeSeriesEngine {
         20 // Max 20% cloud cover
       );
     } catch (err: any) {
-      console.warn('[TIMESERIES] Historical scene search warning:', err.message);
+      if (!isDemo) throw err;
+      console.warn('[TIMESERIES] Demo historical scene search warning:', err.message);
     }
 
     if (!scenes || scenes.length === 0) {
       console.log('[TIMESERIES] No additional historical cloud-free scenes found in catalog.');
-      return [
-        {
-          date: latestDateStr,
-          sceneId: 'CURRENT_SCENE',
-          cloudCover: 4.2,
-          validPixelRatio: 0.96,
-          ndvi: latestMeanNdvi,
-          ndwi: latestMeanNdwi,
-          ndmi: latestMeanNdmi,
-          soilMoistureProxy: Math.round(Math.max(10, Math.min(90, ((latestMeanNdmi + 0.2) / 0.6) * 100))),
-          sustainabilityScore: Math.round(latestMeanNdvi * 100),
-        },
-      ];
+      return [];
     }
 
     // Sort chronologically ascending
-    scenes.sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime());
+    scenes = sortScenesChronologically(scenes);
 
     // Sample distinct observations (at least 20 days apart to capture seasonal changes)
     const sampledScenes: SatelliteScene[] = [];
@@ -86,32 +82,12 @@ export class TimeSeriesEngine {
 
     for (let i = 0; i < sampledScenes.length; i++) {
       const scene = sampledScenes[i];
-      const isLatest = i === sampledScenes.length - 1;
       const dateObj = new Date(scene.datetime);
       const dateFormatted = `${dateObj.getDate().toString().padStart(2, '0')} ${monthsTr[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
 
-      if (isLatest) {
-        // Use the exactly measured latest values
-        const soilMoistureProxy = Math.round(Math.max(10, Math.min(90, ((latestMeanNdmi + 0.2) / 0.6) * 100)));
-        const sustainabilityScore = Math.round(Math.max(30, Math.min(98, latestMeanNdvi * 80 + (latestMeanNdmi + 0.2) * 50)));
-
-        observations.push({
-          date: dateFormatted,
-          sceneId: scene.id,
-          cloudCover: scene.cloudCoverPercent,
-          validPixelRatio: parseFloat((1 - (scene.cloudCoverPercent / 100)).toFixed(2)),
-          ndvi: parseFloat(latestMeanNdvi.toFixed(2)),
-          ndwi: parseFloat(latestMeanNdwi.toFixed(2)),
-          ndmi: parseFloat(latestMeanNdmi.toFixed(2)),
-          soilMoistureProxy,
-          sustainabilityScore,
-        });
-        continue;
-      }
-
       // Check cache for this scene + bbox
-      const cacheKey = `${scene.id}_${bbox.map((n) => n.toFixed(3)).join(',')}`;
-      let cached = historicalSceneCache.get(cacheKey);
+      const cacheKey = `history_${scene.id}_${bbox.map((n) => n.toFixed(3)).join('_')}_${ALGORITHM_VERSION}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+      let cached = historicalSceneCache.get<HistoricalCacheEntry>(cacheKey);
 
       if (!cached) {
         try {
@@ -139,7 +115,6 @@ export class TimeSeriesEngine {
       }
 
       const soilMoistureProxy = Math.round(Math.max(10, Math.min(90, ((cached.ndmi + 0.2) / 0.6) * 100)));
-      const sustainabilityScore = Math.round(Math.max(30, Math.min(98, cached.ndvi * 80 + (cached.ndmi + 0.2) * 50)));
 
       observations.push({
         date: dateFormatted,
@@ -150,22 +125,6 @@ export class TimeSeriesEngine {
         ndwi: parseFloat(cached.ndwi.toFixed(2)),
         ndmi: parseFloat(cached.ndmi.toFixed(2)),
         soilMoistureProxy,
-        sustainabilityScore,
-      });
-    }
-
-    // Ensure we have at least the latest observation if all historical fetches timed out
-    if (observations.length === 0) {
-      observations.push({
-        date: latestDateStr,
-        sceneId: 'CURRENT_SCENE',
-        cloudCover: 4.2,
-        validPixelRatio: 0.96,
-        ndvi: latestMeanNdvi,
-        ndwi: latestMeanNdwi,
-        ndmi: latestMeanNdmi,
-        soilMoistureProxy: Math.round(Math.max(10, Math.min(90, ((latestMeanNdmi + 0.2) / 0.6) * 100))),
-        sustainabilityScore: Math.round(latestMeanNdvi * 100),
       });
     }
 

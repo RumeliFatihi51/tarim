@@ -42,8 +42,8 @@ export const WindowsStatusBar: React.FC<WindowsStatusBarProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  const lat = selectedParcel && selectedParcel.polygon?.[0] ? selectedParcel.polygon[0][0].toFixed(4) : '38.6421';
-  const lng = selectedParcel && selectedParcel.polygon?.[0] ? selectedParcel.polygon[0][1].toFixed(4) : '27.1182';
+  const lat = selectedParcel && selectedParcel.polygon?.[0] ? selectedParcel.polygon[0][0].toFixed(4) : '—';
+  const lng = selectedParcel && selectedParcel.polygon?.[0] ? selectedParcel.polygon[0][1].toFixed(4) : '—';
 
   return (
     <footer
@@ -66,12 +66,12 @@ export const WindowsStatusBar: React.FC<WindowsStatusBarProps> = ({
 
       {/* Center Segment: Sentinel-2 Satellite State */}
       <div className="hidden md:flex items-center gap-2 text-slate-300">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-        <span className="text-emerald-400 font-semibold">Sentinel-2 MSI Level-2A</span>
+        <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+        <span className="text-slate-400 font-semibold">Provider status unavailable</span>
         <span className="text-slate-600">•</span>
-        <span>Tile: T35SMC (10m)</span>
+        <span>Analysis layer: {selectedParcel?.satelliteMetadata?.tileId ?? 'not loaded'}</span>
         <span className="text-slate-600">•</span>
-        <span>Bulut: %2.4 (Optimal)</span>
+        <span>Cloud: {selectedParcel?.satelliteMetadata ? `%${selectedParcel.satelliteMetadata.cloudCoveragePercent}` : 'unavailable'}</span>
       </div>
 
       {/* Right Segment: Engine Specs, Direct EXE link & Windows Time */}

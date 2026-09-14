@@ -57,23 +57,23 @@ export const MRVReportModal: React.FC<MRVReportModalProps> = ({
 
   const centerLat = parcel.polygon && parcel.polygon[0] && typeof parcel.polygon[0][0] === 'number' && !isNaN(parcel.polygon[0][0])
     ? parcel.polygon[0][0].toFixed(4)
-    : '38.6420';
+    : '—';
   const centerLng = parcel.polygon && parcel.polygon[0] && typeof parcel.polygon[0][1] === 'number' && !isNaN(parcel.polygon[0][1])
     ? parcel.polygon[0][1].toFixed(4)
-    : '27.1180';
+    : '—';
 
   const reportNdvi = typeof fullPayload?.calculatedIndices?.ndvi === 'number' && !isNaN(fullPayload.calculatedIndices.ndvi)
     ? fullPayload.calculatedIndices.ndvi.toFixed(3)
-    : (typeof parcel.ndvi === 'number' && !isNaN(parcel.ndvi) ? parcel.ndvi.toFixed(3) : '0.680');
+    : (typeof parcel.ndvi === 'number' && !isNaN(parcel.ndvi) ? parcel.ndvi.toFixed(3) : '—');
   const reportNdwi = typeof fullPayload?.calculatedIndices?.ndwi === 'number' && !isNaN(fullPayload.calculatedIndices.ndwi)
     ? fullPayload.calculatedIndices.ndwi.toFixed(3)
-    : (typeof parcel.ndwi === 'number' && !isNaN(parcel.ndwi) ? parcel.ndwi.toFixed(3) : '0.210');
+    : (typeof parcel.ndwi === 'number' && !isNaN(parcel.ndwi) ? parcel.ndwi.toFixed(3) : '—');
   const reportNdmi = typeof fullPayload?.calculatedIndices?.ndmi === 'number' && !isNaN(fullPayload.calculatedIndices.ndmi)
     ? fullPayload.calculatedIndices.ndmi.toFixed(3)
-    : '0.180';
+    : '—';
   const reportMoisture = typeof fullPayload?.calculatedIndices?.soilMoisture === 'number' && !isNaN(fullPayload.calculatedIndices.soilMoisture)
     ? fullPayload.calculatedIndices.soilMoisture
-    : (typeof parcel.soilMoisture === 'number' && !isNaN(parcel.soilMoisture) ? parcel.soilMoisture : 38);
+    : (typeof parcel.soilMoisture === 'number' && !isNaN(parcel.soilMoisture) ? parcel.soilMoisture : '—');
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-sm flex justify-center p-3 sm:p-6 animate-in fade-in duration-200">
@@ -457,12 +457,12 @@ export const MRVReportModal: React.FC<MRVReportModalProps> = ({
             </div>
           </div>
 
-          {/* Section 19: Signatures & Certification Seal */}
+          {/* Section 19: Integrity metadata; this is not third-party certification. */}
           <div className="pt-6 border-t-2 border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-6 text-xs font-mono">
             <div className="space-y-1 text-center sm:text-left">
-              <div className="text-slate-400 uppercase tracking-wider text-[10px]">Doğrulama Mührü</div>
-              <div className="font-bold text-emerald-400">TerraSat AI Remote Sensing Engine v2.4</div>
-              <div className="text-slate-500 text-[10px]">Copernicus ESA Sentinel Hub & STAC Doğrulamalı</div>
+              <div className="text-slate-400 uppercase tracking-wider text-[10px]">İşlem Bütünlüğü</div>
+              <div className="font-bold text-emerald-400">TerraSat AI Remote Sensing Engine v1.1.0</div>
+              <div className="text-slate-500 text-[10px]">Uydu-türevli; saha doğrulaması değildir</div>
             </div>
 
             <div className="p-3 rounded-xl border border-dashed border-slate-700 bg-slate-900/50 text-center space-y-1">
@@ -470,7 +470,7 @@ export const MRVReportModal: React.FC<MRVReportModalProps> = ({
               <div className="text-xs font-bold text-white tracking-widest">{reportId}</div>
               <div className="text-[9px] text-emerald-400 font-sans flex items-center justify-center gap-1">
                 <CheckCircle2 className="w-3 h-3" />
-                <span>Denetim Raporu Onaylandı</span>
+                <span>Rapor üretildi — sertifika değildir</span>
               </div>
             </div>
           </div>
