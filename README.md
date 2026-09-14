@@ -40,4 +40,3 @@ Run `npm run typecheck`, `npm test`, and `npm run build`. Tests cover geometry/U
 ## Production notes
 
 Production requires `DATABASE_URL`, a 32+ character `JWT_SECRET`, explicit CORS origins, durable artifact storage and a reverse proxy with TLS. Bearer tokens must include `sub`, `companyId`, and a role (`admin`, `analyst`, or `viewer`). Resource limits apply to request size, vertex count and polygon area. For horizontal scale, replace the atomic local job/cache adapters with the included PostgreSQL tables and a dedicated worker queue.
-
